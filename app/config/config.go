@@ -39,7 +39,7 @@ func LoadConfig(file string) (Config, error) {
 
 	data = config.ReplaceEnvVariables(data)
 
-	logger.Debug("Final config data:", string(data))
+	logger.Info("Final config data:", string(data))
 
 	// Unmarshal the JSON data into the Config object
 	err = json.Unmarshal(data, &cfg)
