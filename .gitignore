@@ -1,0 +1,15 @@
+config.json
+config-auth.json
+.metadata
+.recommenders
+.sonarlint
+.settings
+.DS_Store
+
+.idea
+*.iml
+
+unifi-access-mqtt
+dist/
+build/
+*.trace
