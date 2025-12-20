@@ -39,24 +39,55 @@ message CallDoorBell {
   optional string capture_id = 2;
 }
 
-// Remote door open request
+// Remote door open request - /remote_open_door RPC
 message DARemoteOpenDoor {
   optional string request_id = 1;
   optional string user_id = 2;
   optional string user_name = 3;
   optional string door_name = 4;
+  optional string worker_id = 5;     // User ID who opened the door
+  optional string worker_name = 6;   // User name who opened the door
 }
 
-// RPC request wrapper
-message RpcRequest {
-  optional string method = 1;
-  optional bytes payload = 2;
-  optional string request_id = 3;
+// Third party SIP call request - /third_party_sip_call RPC
+message ThirdPartySipCallRequest {
+  optional string request_id = 1;
+  repeated ThirdPartySipPhoneNumber phone_numbers = 2;
+  optional bool canceled = 3;
 }
 
-// RPC response wrapper
-message RpcResponse {
-  optional int32 code = 1;
-  optional string message = 2;
-  optional bytes payload = 3;
+message ThirdPartySipPhoneNumber {
+  optional string account_name = 1;
+  optional string phone_number = 2;
 }
+
+// MQTT Message wrapper - this is the outer envelope for ALL MQTT messages
+// The entire MQTT payload is a protobuf-encoded Message
+message Message {
+  repeated MetaData meta = 1;  // Key-value metadata
+  optional bytes payloads = 2; // Inner protobuf payload (e.g., DARemoteView)
+}
+
+// Metadata key-value pair
+message MetaData {
+  required string key = 1;
+  required string value = 2;
+}
+
+// RPC Meta Keys:
+// For requests:
+//   - "path": RPC endpoint (e.g., "/remote_view")
+//   - "requestId": unique request ID
+//   - "_remote": "true" for bridged messages
+// For responses:
+//   - "code": response code (0 = success)
+//   - "error": error message
+//   - "requestId": echoed from request
+
+// Example: To trigger doorbell on Viewer via MQTT
+// 1. Topic: /uctrl/{controller_id}/device/{viewer_id}/rpc/{client_id}/request
+// 2. Payload: Message {
+//      meta: [{key: "path", value: "/remote_view"},
+//             {key: "requestId", value: "unique-id"}]
+//      payloads: <DARemoteView protobuf bytes>
+//    }

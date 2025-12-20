@@ -30,6 +30,15 @@ go build -o mqtt-trace .
 | `-v` | `false` | Verbose output (show hex dump) |
 | `-raw` | `false` | Raw mode (hex dump only, no decoding) |
 
+### RPC Options (for sending commands)
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-rpc` | (none) | RPC command to send: `remote_view`, `remote_open_door` |
+| `-controller` | (required for RPC) | Controller ID (MAC without colons) |
+| `-viewer` | (required for RPC) | Viewer device ID (MAC without colons) |
+| `-reader` | (optional) | Reader device ID (source for remote_view) |
+
 ### Examples
 
 ```bash
@@ -49,6 +58,18 @@ go build -o mqtt-trace .
 
 # Raw hex dump only
 ./mqtt-trace -broker 10.1.0.1 -raw ...
+
+# Wake up a Viewer display (trigger doorbell UI)
+./mqtt-trace -broker 10.1.0.1 \
+  -ca ../scripts/certs/ca-cert.pem \
+  -cert ../scripts/certs/mqtt-client-cert.pem \
+  -key ../scripts/certs/mqtt-client-priv.pem \
+  -rpc remote_view \
+  -controller <controller_id> \
+  -viewer <viewer_id>
+
+# Or use the wake-viewer.sh script:
+../wake-viewer.sh 10.1.0.1
 ```
 
 ## Topic Patterns

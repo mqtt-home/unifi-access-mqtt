@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
@@ -26,6 +27,12 @@ var (
 	topic    = flag.String("topic", "#", "MQTT topic to subscribe to")
 	verbose  = flag.Bool("v", false, "Verbose output (show hex dump)")
 	rawMode  = flag.Bool("raw", false, "Raw mode (no decoding)")
+
+	// RPC command flags
+	sendRPC      = flag.String("rpc", "", "Send RPC command: remote_view, remote_open_door")
+	controllerID = flag.String("controller", "", "Controller ID (MAC without colons, e.g., 28704e275599)")
+	viewerID     = flag.String("viewer", "", "Viewer device ID (MAC without colons)")
+	readerID     = flag.String("reader", "", "Reader device ID (for remote_view source)")
 )
 
 // ANSI colors for terminal output
@@ -53,9 +60,10 @@ func main() {
 		log.Fatalf("Failed to create TLS config: %v", err)
 	}
 
+	clientID := fmt.Sprintf("mqtt-trace-%d", time.Now().UnixNano())
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(fmt.Sprintf("ssl://%s:%d", *broker, *port))
-	opts.SetClientID(fmt.Sprintf("mqtt-trace-%d", time.Now().UnixNano()))
+	opts.SetClientID(clientID)
 	opts.SetTLSConfig(tlsConfig)
 	opts.SetAutoReconnect(true)
 	opts.SetConnectRetry(true)
@@ -63,6 +71,13 @@ func main() {
 
 	opts.SetOnConnectHandler(func(c mqtt.Client) {
 		fmt.Printf("%s[CONNECTED]%s to %s:%d\n", colorGreen, colorReset, *broker, *port)
+
+		// If sending RPC, do it now
+		if *sendRPC != "" {
+			sendRPCCommand(c, clientID)
+			return
+		}
+
 		token := c.Subscribe(*topic, 0, messageHandler)
 		token.Wait()
 		if token.Error() != nil {
@@ -81,6 +96,13 @@ func main() {
 		log.Fatalf("Failed to connect: %v", token.Error())
 	}
 
+	// If RPC mode, wait a bit for response then exit
+	if *sendRPC != "" {
+		time.Sleep(3 * time.Second)
+		client.Disconnect(250)
+		return
+	}
+
 	// Wait for interrupt signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -88,6 +110,214 @@ func main() {
 
 	fmt.Println("\nDisconnecting...")
 	client.Disconnect(250)
+}
+
+// sendRPCCommand sends an RPC command to a device
+func sendRPCCommand(client mqtt.Client, clientID string) {
+	if *controllerID == "" {
+		log.Fatal("Controller ID is required for RPC. Use -controller flag.")
+	}
+	if *viewerID == "" {
+		log.Fatal("Viewer device ID is required for RPC. Use -viewer flag.")
+	}
+
+	// Subscribe to response topic
+	responseTopic := fmt.Sprintf("/uctrl/%s/device/%s/rpc/%s/response", *controllerID, *viewerID, clientID)
+	token := client.Subscribe(responseTopic, 0, func(c mqtt.Client, msg mqtt.Message) {
+		fmt.Printf("\n%s[RPC RESPONSE]%s on %s\n", colorGreen, colorReset, msg.Topic())
+		decodeRPCResponse(msg.Payload())
+	})
+	token.Wait()
+	if token.Error() != nil {
+		log.Printf("Failed to subscribe to response topic: %v", token.Error())
+	}
+
+	// Build and send RPC request
+	requestTopic := fmt.Sprintf("/uctrl/%s/device/%s/rpc/%s/request", *controllerID, *viewerID, clientID)
+	requestID := generateRequestID()
+
+	var payload []byte
+	var path string
+
+	switch *sendRPC {
+	case "remote_view":
+		path = "/remote_view"
+		payload = buildRemoteViewPayload(requestID)
+	case "remote_open_door":
+		path = "/remote_open_door"
+		payload = buildRemoteOpenDoorPayload(requestID)
+	default:
+		log.Fatalf("Unknown RPC command: %s. Supported: remote_view, remote_open_door", *sendRPC)
+	}
+
+	// Build the Message wrapper
+	message := buildMQTTMessage(path, requestID, payload)
+
+	fmt.Printf("%s[SENDING RPC]%s %s to %s\n", colorYellow, colorReset, path, requestTopic)
+	fmt.Printf("  Request ID: %s\n", requestID)
+	if *verbose {
+		fmt.Printf("  Payload (%d bytes):\n%s", len(message), hex.Dump(message))
+	}
+
+	pubToken := client.Publish(requestTopic, 0, false, message)
+	pubToken.Wait()
+	if pubToken.Error() != nil {
+		log.Printf("Failed to publish: %v", pubToken.Error())
+	} else {
+		fmt.Printf("%s[SENT]%s Waiting for response...\n", colorGreen, colorReset)
+	}
+}
+
+// generateRequestID generates a unique request ID
+func generateRequestID() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return fmt.Sprintf("rpc-%x", b)
+}
+
+// buildMQTTMessage builds the protobuf Message wrapper
+func buildMQTTMessage(path, requestID string, innerPayload []byte) []byte {
+	var buf []byte
+
+	// Add meta: path
+	buf = append(buf, encodeMetaData("path", path)...)
+
+	// Add meta: requestId
+	buf = append(buf, encodeMetaData("requestId", requestID)...)
+
+	// Add payloads field (field 2, length-delimited)
+	if len(innerPayload) > 0 {
+		buf = append(buf, 0x12) // field 2, wire type 2
+		buf = append(buf, encodeVarint(uint64(len(innerPayload)))...)
+		buf = append(buf, innerPayload...)
+	}
+
+	return buf
+}
+
+// encodeMetaData encodes a MetaData proto (field 1 in Message)
+func encodeMetaData(key, value string) []byte {
+	// Build MetaData message
+	var meta []byte
+	// key (field 1)
+	meta = append(meta, 0x0a) // field 1, wire type 2
+	meta = append(meta, encodeVarint(uint64(len(key)))...)
+	meta = append(meta, []byte(key)...)
+	// value (field 2)
+	meta = append(meta, 0x12) // field 2, wire type 2
+	meta = append(meta, encodeVarint(uint64(len(value)))...)
+	meta = append(meta, []byte(value)...)
+
+	// Wrap in Message field 1 (repeated MetaData)
+	var buf []byte
+	buf = append(buf, 0x0a) // field 1, wire type 2
+	buf = append(buf, encodeVarint(uint64(len(meta)))...)
+	buf = append(buf, meta...)
+
+	return buf
+}
+
+// buildRemoteViewPayload builds a DARemoteView protobuf message
+func buildRemoteViewPayload(requestID string) []byte {
+	var buf []byte
+
+	// Generate a channel ID (format: PR-{uuid-like})
+	channelID := fmt.Sprintf("PR-%s", requestID)
+
+	// agura_channel (field 1, required)
+	buf = append(buf, 0x0a) // field 1, wire type 2
+	buf = append(buf, encodeVarint(uint64(len(channelID)))...)
+	buf = append(buf, []byte(channelID)...)
+
+	// device_id (field 5) - source reader
+	if *readerID != "" {
+		buf = append(buf, 0x2a) // field 5, wire type 2
+		buf = append(buf, encodeVarint(uint64(len(*readerID)))...)
+		buf = append(buf, []byte(*readerID)...)
+	}
+
+	// action (field 6) - "ring"
+	action := "ring"
+	buf = append(buf, 0x32) // field 6, wire type 2
+	buf = append(buf, encodeVarint(uint64(len(action)))...)
+	buf = append(buf, []byte(action)...)
+
+	// room_id (field 9) - same as channel
+	buf = append(buf, 0x4a) // field 9, wire type 2
+	buf = append(buf, encodeVarint(uint64(len(channelID)))...)
+	buf = append(buf, []byte(channelID)...)
+
+	// request_id (field 10)
+	buf = append(buf, 0x52) // field 10, wire type 2
+	buf = append(buf, encodeVarint(uint64(len(requestID)))...)
+	buf = append(buf, []byte(requestID)...)
+
+	return buf
+}
+
+// buildRemoteOpenDoorPayload builds a DARemoteOpenDoor protobuf message
+func buildRemoteOpenDoorPayload(requestID string) []byte {
+	var buf []byte
+
+	// request_id (field 1)
+	buf = append(buf, 0x0a) // field 1, wire type 2
+	buf = append(buf, encodeVarint(uint64(len(requestID)))...)
+	buf = append(buf, []byte(requestID)...)
+
+	// user_name (field 3)
+	userName := "MQTT Trigger"
+	buf = append(buf, 0x1a) // field 3, wire type 2
+	buf = append(buf, encodeVarint(uint64(len(userName)))...)
+	buf = append(buf, []byte(userName)...)
+
+	return buf
+}
+
+// encodeVarint encodes a uint64 as a protobuf varint
+func encodeVarint(v uint64) []byte {
+	var buf []byte
+	for v >= 0x80 {
+		buf = append(buf, byte(v)|0x80)
+		v >>= 7
+	}
+	buf = append(buf, byte(v))
+	return buf
+}
+
+// decodeRPCResponse decodes and displays an RPC response
+func decodeRPCResponse(data []byte) {
+	if len(data) == 0 {
+		fmt.Printf("  %s<empty response>%s\n", colorGray, colorReset)
+		return
+	}
+
+	fields := parseProtobufFields(data)
+	for _, field := range fields {
+		if field.WireType == 2 { // Length-delimited (likely MetaData)
+			// Try to parse as nested MetaData
+			innerFields := parseProtobufFields(field.Data)
+			if len(innerFields) >= 2 {
+				key := sanitizeString(string(innerFields[0].Data))
+				value := sanitizeString(string(innerFields[1].Data))
+				if key != "" && value != "" {
+					valueColor := colorReset
+					if key == "code" {
+						if value == "0" {
+							valueColor = colorGreen
+						} else {
+							valueColor = colorRed
+						}
+					}
+					fmt.Printf("  %s: %s%s%s\n", key, valueColor, value, colorReset)
+					continue
+				}
+			}
+		}
+		value := sanitizeString(string(field.Data))
+		if value != "" {
+			fmt.Printf("  field_%d: %s\n", field.FieldNumber, value)
+		}
+	}
 }
 
 func newTLSConfig(caFile, certFile, keyFile string) (*tls.Config, error) {
