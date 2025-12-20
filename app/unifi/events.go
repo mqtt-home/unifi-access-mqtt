@@ -171,6 +171,13 @@ func (e *EventListener) handleMessage(message []byte) {
 	// Log all non-heartbeat messages
 	logger.Debug("WebSocket message:", msgStr)
 
+	// Enhanced logging for doorbell-related events (for reverse engineering)
+	if strings.Contains(msgStr, "remote_view") || strings.Contains(msgStr, "doorbell") || strings.Contains(msgStr, "remote_call") {
+		logger.Info("=== DOORBELL EVENT RAW JSON ===")
+		logger.Info(msgStr)
+		logger.Info("=== END DOORBELL EVENT ===")
+	}
+
 	// Skip non-JSON object messages
 	if !strings.HasPrefix(msgStr, "{") {
 		logger.Debug("Ignoring non-JSON WebSocket message:", msgStr)

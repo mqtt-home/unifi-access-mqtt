@@ -253,6 +253,7 @@ func (c *Client) Bootstrap() (*BootstrapResponse, error) {
 	response := &BootstrapResponse{
 		Devices: []DeviceConfig{},
 		Doors:   []DoorConfig{},
+		Viewers: []DeviceConfig{},
 	}
 
 	// Get controller info
@@ -262,6 +263,18 @@ func (c *Client) Bootstrap() (*BootstrapResponse, error) {
 
 	// Traverse: buildings -> floors -> doors -> device_groups (devices)
 	for _, building := range topology.Data {
+		// Extract Viewers from building-level device_groups
+		// Viewers are associated with the building, not specific doors
+		for _, group := range building.DeviceGroups {
+			for i := range group {
+				device := group[i]
+				if device.IsViewer() {
+					response.Viewers = append(response.Viewers, device)
+					logger.Debug("Found Viewer at building level:", device.GetID(), device.Name)
+				}
+			}
+		}
+
 		for _, floor := range building.Floors {
 			for _, door := range floor.Doors {
 				// Add door to list
@@ -283,13 +296,18 @@ func (c *Client) Bootstrap() (*BootstrapResponse, error) {
 							Name:     door.Name,
 						}
 						response.Devices = append(response.Devices, device)
+
+						// Also track Viewers separately (door-level viewers, if any)
+						if device.IsViewer() {
+							response.Viewers = append(response.Viewers, device)
+						}
 					}
 				}
 			}
 		}
 	}
 
-	logger.Debug("Bootstrap: extracted", len(response.Devices), "devices,", len(response.Doors), "doors")
+	logger.Debug("Bootstrap: extracted", len(response.Devices), "devices,", len(response.Doors), "doors,", len(response.Viewers), "viewers")
 	return response, nil
 }
 
@@ -346,6 +364,95 @@ func (c *Client) GetWebSocketURL() string {
 	host := strings.TrimPrefix(c.host, "https://")
 	host = strings.TrimPrefix(host, "http://")
 	return fmt.Sprintf("wss://%s/proxy/access/api/v2/ws/notification", host)
+}
+
+// DoorbellRingRequest contains the information needed to trigger a doorbell ring
+type DoorbellRingRequest struct {
+	DeviceID     string   // The reader/doorbell device ID
+	DeviceName   string   // Name of the device (e.g., "Eingang")
+	DoorName     string   // Name of the door
+	FloorName    string   // Name of the floor (optional)
+	ControllerID string   // Controller ID (optional, will use device ID if empty)
+	InOrOut      string   // "in" or "out" (default: "in")
+	ViewerIDs    []string // Viewer device IDs to notify (notify_door_guards)
+}
+
+// TriggerDoorbellRing attempts to trigger a doorbell ring via the remote_call API
+// This uses the DoorbellRequestBody format that the reader uses when someone presses the button
+func (c *Client) TriggerDoorbellRing(req DoorbellRingRequest) error {
+	url := c.getAccessAPIURL(fmt.Sprintf("/device/%s/remote_call", req.DeviceID))
+	logger.Info("Attempting to trigger doorbell ring:", url)
+
+	// Generate unique IDs similar to what the reader does
+	roomID := fmt.Sprintf("PR-%s", generateUUID())
+	requestID := generateRandomString(32)
+	now := time.Now().Unix()
+
+	// Use device ID as controller ID if not provided
+	controllerID := req.ControllerID
+	if controllerID == "" {
+		controllerID = req.DeviceID
+	}
+
+	// Default to "in" if not specified
+	inOrOut := req.InOrOut
+	if inOrOut == "" {
+		inOrOut = "in"
+	}
+
+	// Use provided ViewerIDs or empty slice
+	viewerIDs := req.ViewerIDs
+	if viewerIDs == nil {
+		viewerIDs = []string{}
+	}
+
+	// DoorbellRequestBody format - this is what the reader sends when the button is pressed
+	payload := map[string]interface{}{
+		"request_id":         requestID,
+		"agora_channel":      roomID,
+		"controller_id":      controllerID,
+		"device_id":          req.DeviceID,
+		"device_name":        req.DeviceName,
+		"door_name":          req.DoorName,
+		"floor_name":         req.FloorName,
+		"in_or_out":          inOrOut,
+		"mode":               "webrtc",
+		"create_time_uid":    now,
+		"create_time":        now,
+		"room_id":            roomID,
+		"notify_door_guards": viewerIDs,
+	}
+
+	logger.Info("DoorbellRequestBody payload:", payload)
+
+	respBody, err := c.post(url, payload)
+	if err != nil {
+		return fmt.Errorf("remote_call request failed: %w", err)
+	}
+
+	logger.Info("Remote call response:", string(respBody))
+	return nil
+}
+
+// generateUUID generates a simple UUID v4
+func generateUUID() string {
+	b := make([]byte, 16)
+	for i := range b {
+		b[i] = byte(time.Now().UnixNano() % 256)
+		time.Sleep(time.Nanosecond)
+	}
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// generateRandomString generates a random alphanumeric string
+func generateRandomString(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	result := make([]byte, length)
+	for i := range result {
+		result[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+		time.Sleep(time.Nanosecond)
+	}
+	return string(result)
 }
 
 // GetCookies returns the current session cookies

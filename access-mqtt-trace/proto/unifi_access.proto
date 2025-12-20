@@ -1,0 +1,62 @@
+syntax = "proto2";
+
+package models;
+
+option go_package = "github.com/philipparndt/unifi-access/access-mqtt-trace/proto";
+
+// Device status message - sent to /uctrl/{controller}/device/{device}/stat
+message DeviceStat {
+  required string id = 1;      // Device ID (MAC without colons)
+  required string model = 2;   // Device model (e.g., UA-G3-Pro, UA-Hub-Door-Mini)
+  required string name = 3;    // Device display name
+  repeated string attrs = 4;   // Key=value attributes
+}
+
+// Wrapper message for stat messages
+message StatMessage {
+  optional DeviceStat device_stat = 2;
+}
+
+// Remote view request - /remote_view RPC
+message DARemoteView {
+  required string agura_channel = 1;     // Agora video channel (typo in original)
+  optional string app_id = 2;
+  optional string user_id = 3;
+  optional string user_name = 4;
+  optional string device_id = 5;
+  optional string action = 6;
+  optional string video_token = 7;
+  optional string agora_app_id = 8;
+  optional string room_id = 9;
+  optional string request_id = 10;
+  optional string doorbell_channel = 11;
+  optional bool disable_pickup = 12;
+}
+
+// Doorbell call message
+message CallDoorBell {
+  required string id = 1;
+  optional string capture_id = 2;
+}
+
+// Remote door open request
+message DARemoteOpenDoor {
+  optional string request_id = 1;
+  optional string user_id = 2;
+  optional string user_name = 3;
+  optional string door_name = 4;
+}
+
+// RPC request wrapper
+message RpcRequest {
+  optional string method = 1;
+  optional bytes payload = 2;
+  optional string request_id = 3;
+}
+
+// RPC response wrapper
+message RpcResponse {
+  optional int32 code = 1;
+  optional string message = 2;
+  optional bytes payload = 3;
+}

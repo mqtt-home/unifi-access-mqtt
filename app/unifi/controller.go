@@ -99,6 +99,31 @@ func (c *Controller) UnlockDoor(door *Door) error {
 	return c.client.Unlock(door.ID)
 }
 
+// TriggerDoorbellRing attempts to trigger a doorbell ring (experimental)
+// This uses the DoorbellRequestBody format that the reader uses when someone presses the button
+func (c *Controller) TriggerDoorbellRing(door *Door) error {
+	// We need the doorbell device ID, not the hub ID
+	// The doorbell device is typically a separate device connected to the hub
+	deviceID := door.DoorbellDeviceID
+	if deviceID == "" {
+		// Fall back to trying the hub ID
+		deviceID = door.ID
+	}
+
+	logger.Info("Triggering doorbell ring for door:", door.Name, "device:", deviceID, "viewers:", door.ViewerIDs)
+
+	req := DoorbellRingRequest{
+		DeviceID:   deviceID,
+		DeviceName: door.Name,
+		DoorName:   door.Name,
+		FloorName:  "", // Could be extracted from topology if needed
+		InOrOut:    "in",
+		ViewerIDs:  door.ViewerIDs,
+	}
+
+	return c.client.TriggerDoorbellRing(req)
+}
+
 // DismissDoorbellCall dismisses an active doorbell call
 func (c *Controller) DismissDoorbellCall(door *Door) error {
 	if door.DoorbellRequestID == "" {
@@ -142,7 +167,7 @@ func (c *Controller) bootstrap() error {
 	}
 
 	logger.Info("UniFi Access Controller:", bootstrap.Host.Name, "(Version:", bootstrap.Version+")")
-	logger.Info("Bootstrap: Found", strconv.Itoa(len(bootstrap.Devices)), "devices,", strconv.Itoa(len(bootstrap.Doors)), "doors")
+	logger.Info("Bootstrap: Found", strconv.Itoa(len(bootstrap.Devices)), "devices,", strconv.Itoa(len(bootstrap.Doors)), "doors,", strconv.Itoa(len(bootstrap.Viewers)), "viewers")
 
 	// Debug: log all devices
 	for i, device := range bootstrap.Devices {
@@ -160,6 +185,29 @@ func (c *Controller) bootstrap() error {
 	doorConfigs := make(map[string]*DoorConfig)
 	for i := range bootstrap.Doors {
 		doorConfigs[bootstrap.Doors[i].UniqueID] = &bootstrap.Doors[i]
+	}
+
+	// Collect all Viewer IDs
+	// Building-level viewers (no Door reference) are available to all doors
+	// Door-level viewers are only available to their specific door
+	allViewerIDs := make([]string, 0)
+	doorViewers := make(map[string][]string)
+
+	for _, viewer := range bootstrap.Viewers {
+		viewerID := viewer.GetID() // Use GetID() to handle connected_uah_id for viewers
+		if viewerID == "" {
+			continue
+		}
+
+		if viewer.Door != nil {
+			// Door-specific viewer
+			doorViewers[viewer.Door.UniqueID] = append(doorViewers[viewer.Door.UniqueID], viewerID)
+			logger.Debug("Viewer", viewerID, "associated with door", viewer.Door.Name)
+		} else {
+			// Building-level viewer - available to all doors
+			allViewerIDs = append(allViewerIDs, viewerID)
+			logger.Debug("Viewer", viewerID, "(", viewer.Name, ") available to all doors (building-level)")
+		}
 	}
 
 	// Process devices
@@ -191,6 +239,13 @@ func (c *Controller) bootstrap() error {
 		// Get initial lock state from device config
 		door.LockStatus = c.getLockStatusFromDevice(device)
 
+		// Associate Viewers with this door
+		// Include both door-specific viewers and building-level viewers
+		door.ViewerIDs = append([]string{}, allViewerIDs...) // Copy building-level viewers
+		if device.Door != nil {
+			door.ViewerIDs = append(door.ViewerIDs, doorViewers[device.Door.UniqueID]...)
+		}
+
 		c.doors[door.ID] = door
 		c.doorsByName[NormalizeDoorName(door.Name)] = door
 
@@ -198,7 +253,8 @@ func (c *Controller) bootstrap() error {
 			"(Type:", device.DeviceType+",",
 			"Online:", strconv.FormatBool(device.IsOnline)+",",
 			"Lock:", door.LockStatus+",",
-			"Doorbell:", strconv.FormatBool(device.HasCapability(CapabilityDoorbell))+")")
+			"Doorbell:", strconv.FormatBool(device.HasCapability(CapabilityDoorbell))+",",
+			"Viewers:", strconv.Itoa(len(door.ViewerIDs))+")")
 	}
 
 	return nil

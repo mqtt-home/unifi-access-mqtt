@@ -1,6 +1,9 @@
 package unifi
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // TopologyResponse represents the raw response from topology4 API
 type TopologyResponse struct {
@@ -11,9 +14,10 @@ type TopologyResponse struct {
 
 // BuildingConfig represents a building in the topology
 type BuildingConfig struct {
-	UniqueID string        `json:"unique_id"`
-	Name     string        `json:"name"`
-	Floors   []FloorConfig `json:"floors"`
+	UniqueID     string           `json:"unique_id"`
+	Name         string           `json:"name"`
+	Floors       []FloorConfig    `json:"floors"`
+	DeviceGroups [][]DeviceConfig `json:"device_groups"` // Building-level devices (Viewers)
 }
 
 // BootstrapResponse represents the parsed bootstrap data
@@ -22,6 +26,7 @@ type BootstrapResponse struct {
 	Host    ControllerHost   `json:"host"`
 	Devices []DeviceConfig   `json:"devices"`
 	Doors   []DoorConfig     `json:"full_doors"`
+	Viewers []DeviceConfig   `json:"viewers"` // Intercom Viewer devices
 }
 
 // ControllerHost represents the UniFi Access controller information
@@ -33,18 +38,27 @@ type ControllerHost struct {
 
 // DeviceConfig represents a UniFi Access device configuration
 type DeviceConfig struct {
-	UniqueID     string         `json:"unique_id"`
-	Name         string         `json:"name"`
-	DeviceType   string         `json:"device_type"` // UAH, UGT, UA-ULTRA, UA-Hub-Door-Mini
-	DisplayModel string         `json:"display_model"`
-	MAC          string         `json:"mac"`
-	IP           string         `json:"ip,omitempty"`
-	IsOnline     bool           `json:"is_online"`
-	IsManaged    bool           `json:"is_managed"`
-	Capabilities []string       `json:"capabilities"`
-	Configs      []ConfigEntry  `json:"configs,omitempty"`
-	Extensions   []Extension    `json:"extensions,omitempty"`
-	Door         *DoorReference `json:"door,omitempty"`
+	UniqueID       string         `json:"unique_id"`
+	ConnectedUAHID string         `json:"connected_uah_id"` // Used by Viewers instead of unique_id
+	Name           string         `json:"name"`
+	DeviceType     string         `json:"device_type"` // UAH, UGT, UA-ULTRA, UA-Hub-Door-Mini, UA-Int-Viewer
+	DisplayModel   string         `json:"display_model"`
+	MAC            string         `json:"mac"`
+	IP             string         `json:"ip,omitempty"`
+	IsOnline       bool           `json:"is_online"`
+	IsManaged      bool           `json:"is_managed"`
+	Capabilities   []string       `json:"capabilities"`
+	Configs        []ConfigEntry  `json:"configs,omitempty"`
+	Extensions     []Extension    `json:"extensions,omitempty"`
+	Door           *DoorReference `json:"door,omitempty"`
+}
+
+// GetID returns the effective device ID (unique_id or connected_uah_id for viewers)
+func (d *DeviceConfig) GetID() string {
+	if d.UniqueID != "" {
+		return d.UniqueID
+	}
+	return d.ConnectedUAHID
 }
 
 // ConfigEntry represents a device configuration entry
@@ -149,6 +163,9 @@ const (
 	DeviceTypeUGT         = "UGT"
 	DeviceTypeUAUltra     = "UA-ULTRA"
 	DeviceTypeUAHubMini   = "UA-Hub-Door-Mini"
+	DeviceTypeViewer      = "UA-Int-Viewer"
+	DeviceTypeG3Reader    = "UA-G3"
+	DeviceTypeG3ProReader = "UA-G3-Pro"
 )
 
 // Device capabilities
@@ -174,6 +191,16 @@ func (d *DeviceConfig) HasCapability(cap string) bool {
 	return false
 }
 
+// IsViewer checks if a device is an Intercom Viewer
+func (d *DeviceConfig) IsViewer() bool {
+	return strings.Contains(d.DeviceType, "Viewer")
+}
+
+// IsReader checks if a device is a Reader (G3, G3-Pro, etc.)
+func (d *DeviceConfig) IsReader() bool {
+	return d.HasCapability(CapabilityIsReader)
+}
+
 // GetConfigValue returns the value of a config entry by key
 func (d *DeviceConfig) GetConfigValue(key string) string {
 	for _, c := range d.Configs {
@@ -193,10 +220,11 @@ type Door struct {
 	DoorStatus          string // "open" or "closed"
 	DoorbellRinging     bool
 	DoorbellRequestID   string
-	DoorbellDeviceID    string // The actual doorbell/camera device ID (different from hub)
-	DoorbellRoomID      string // Room ID for the active call
-	DoorbellChannel     string // Doorbell channel for the active call
+	DoorbellDeviceID    string   // The actual doorbell/camera device ID (different from hub)
+	DoorbellRoomID      string   // Room ID for the active call
+	DoorbellChannel     string   // Doorbell channel for the active call
 	IsOnline            bool
+	ViewerIDs           []string // Associated Viewer device IDs for doorbell notifications
 }
 
 // NewDoor creates a new Door from device and door config

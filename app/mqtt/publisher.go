@@ -157,6 +157,13 @@ func (p *Publisher) handleCommand(topic string, payload []byte) {
 		if err := p.controller.DismissDoorbellCall(matchedDoor); err != nil {
 			logger.Error("Failed to dismiss doorbell call", matchedDoor.Name, err)
 		}
+	case "ring":
+		// Experimental: Attempt to trigger a doorbell ring via the remote_call API
+		// This is for reverse engineering - we're testing if this creates an Access Viewer notification
+		logger.Info("Attempting experimental doorbell ring trigger for", matchedDoor.Name)
+		if err := p.controller.TriggerDoorbellRing(matchedDoor); err != nil {
+			logger.Error("Failed to trigger doorbell ring", matchedDoor.Name, err)
+		}
 	default:
 		logger.Warn("Unknown action:", cmd.Action)
 	}
