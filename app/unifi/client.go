@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -120,7 +121,7 @@ func (c *Client) Login() error {
 
 	// Log cookies after login and extract user info from JWT
 	cookies := c.httpClient.Jar.Cookies(req.URL)
-	logger.Debug("Cookies after login:", len(cookies))
+	logger.Debug("Cookies after login:", strconv.Itoa(len(cookies)))
 	for _, cookie := range cookies {
 		logger.Debug("  Cookie:", cookie.Name)
 		if cookie.Name == "TOKEN" {
@@ -236,7 +237,7 @@ func (c *Client) Bootstrap() (*BootstrapResponse, error) {
 	}
 
 	// Log more of the response for debugging
-	logger.Debug("Full topology response length:", len(data))
+	logger.Debug("Full topology response length:", strconv.Itoa(len(data)))
 	if len(data) > 2000 {
 		logger.Debug("Response excerpt:", string(data[:2000]))
 	}
@@ -247,7 +248,7 @@ func (c *Client) Bootstrap() (*BootstrapResponse, error) {
 		return nil, fmt.Errorf("failed to parse topology response: %w", err)
 	}
 
-	logger.Debug("Topology: parsed", len(topology.Data), "buildings")
+	logger.Debug("Topology: parsed", strconv.Itoa(len(topology.Data)), "buildings")
 
 	// Extract devices and doors from the hierarchical topology
 	response := &BootstrapResponse{
@@ -307,7 +308,7 @@ func (c *Client) Bootstrap() (*BootstrapResponse, error) {
 		}
 	}
 
-	logger.Debug("Bootstrap: extracted", len(response.Devices), "devices,", len(response.Doors), "doors,", len(response.Viewers), "viewers")
+	logger.Debug("Bootstrap: extracted", strconv.Itoa(len(response.Devices)), "devices,", strconv.Itoa(len(response.Doors)), "doors,", strconv.Itoa(len(response.Viewers)), "viewers")
 	return response, nil
 }
 
@@ -381,7 +382,7 @@ type DoorbellRingRequest struct {
 // This uses the DoorbellRequestBody format that the reader uses when someone presses the button
 func (c *Client) TriggerDoorbellRing(req DoorbellRingRequest) error {
 	url := c.getAccessAPIURL(fmt.Sprintf("/device/%s/remote_call", req.DeviceID))
-	logger.Info("Attempting to trigger doorbell ring:", url)
+	logger.Debug("Triggering doorbell ring:", url)
 
 	// Generate unique IDs similar to what the reader does
 	roomID := fmt.Sprintf("PR-%s", generateUUID())
@@ -423,14 +424,14 @@ func (c *Client) TriggerDoorbellRing(req DoorbellRingRequest) error {
 		"notify_door_guards": viewerIDs,
 	}
 
-	logger.Info("DoorbellRequestBody payload:", payload)
+	logger.Debug("DoorbellRequestBody payload:", payload)
 
 	respBody, err := c.post(url, payload)
 	if err != nil {
 		return fmt.Errorf("remote_call request failed: %w", err)
 	}
 
-	logger.Info("Remote call response:", string(respBody))
+	logger.Debug("Remote call response:", string(respBody))
 	return nil
 }
 

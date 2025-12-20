@@ -173,9 +173,7 @@ func (e *EventListener) handleMessage(message []byte) {
 
 	// Enhanced logging for doorbell-related events (for reverse engineering)
 	if strings.Contains(msgStr, "remote_view") || strings.Contains(msgStr, "doorbell") || strings.Contains(msgStr, "remote_call") {
-		logger.Info("=== DOORBELL EVENT RAW JSON ===")
-		logger.Info(msgStr)
-		logger.Info("=== END DOORBELL EVENT ===")
+		logger.Debug("Doorbell event:", msgStr)
 	}
 
 	// Skip non-JSON object messages

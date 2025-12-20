@@ -17,10 +17,17 @@ type Config struct {
 }
 
 type UniFiConfig struct {
-	Host      string `json:"host"`
-	Username  string `json:"username"`
-	Password  string `json:"password"`
-	VerifySSL *bool  `json:"verify-ssl,omitempty"`
+	Host      string          `json:"host"`
+	Username  string          `json:"username"`
+	Password  string          `json:"password"`
+	VerifySSL *bool           `json:"verify-ssl,omitempty"`
+	Doorbell  *DoorbellConfig `json:"doorbell,omitempty"`
+}
+
+// DoorbellConfig defines the devices to use for doorbell ring triggers
+type DoorbellConfig struct {
+	SourceReader  string   `json:"sourceReader"`  // Device ID or MAC of the reader (UA-G3, UA-G3-Pro)
+	TargetViewers []string `json:"targetViewers"` // Device IDs or MACs of viewers to notify
 }
 
 func (u *UniFiConfig) GetVerifySSL() bool {

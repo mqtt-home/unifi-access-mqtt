@@ -41,6 +41,11 @@ func main() {
 		cfg.UniFi.GetVerifySSL(),
 	)
 
+	// Set doorbell configuration if present
+	if cfg.UniFi.Doorbell != nil {
+		controller.SetDoorbellConfig(cfg.UniFi.Doorbell.SourceReader, cfg.UniFi.Doorbell.TargetViewers)
+	}
+
 	// Connect to UniFi Access
 	if err := controller.Connect(); err != nil {
 		logger.Error("Failed to connect to UniFi Access:", err)

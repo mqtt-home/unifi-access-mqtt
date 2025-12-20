@@ -3,6 +3,7 @@ package mqtt
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/mqtt-home/unifi-access-mqtt/unifi"
@@ -89,7 +90,7 @@ func (p *Publisher) PublishDoorbellState(door *unifi.Door) {
 // PublishAllDoors publishes state for all doors
 func (p *Publisher) PublishAllDoors() {
 	doors := p.controller.GetDoors()
-	logger.Info("Publishing initial state for", len(doors), "doors")
+	logger.Info("Publishing initial state for", strconv.Itoa(len(doors)), "doors")
 	for _, door := range doors {
 		p.PublishDoorState(door)
 		if door.Device.HasCapability(unifi.CapabilityDoorbell) {
@@ -158,9 +159,8 @@ func (p *Publisher) handleCommand(topic string, payload []byte) {
 			logger.Error("Failed to dismiss doorbell call", matchedDoor.Name, err)
 		}
 	case "ring":
-		// Experimental: Attempt to trigger a doorbell ring via the remote_call API
-		// This is for reverse engineering - we're testing if this creates an Access Viewer notification
-		logger.Info("Attempting experimental doorbell ring trigger for", matchedDoor.Name)
+		// Trigger a doorbell ring via the remote_call API
+		logger.Debug("Triggering doorbell ring for", matchedDoor.Name)
 		if err := p.controller.TriggerDoorbellRing(matchedDoor); err != nil {
 			logger.Error("Failed to trigger doorbell ring", matchedDoor.Name, err)
 		}

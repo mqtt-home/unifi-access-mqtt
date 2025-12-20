@@ -220,9 +220,10 @@ type Door struct {
 	DoorStatus          string // "open" or "closed"
 	DoorbellRinging     bool
 	DoorbellRequestID   string
-	DoorbellDeviceID    string   // The actual doorbell/camera device ID (different from hub)
+	DoorbellDeviceID    string   // Device ID from active doorbell call (cleared when call ends)
 	DoorbellRoomID      string   // Room ID for the active call
 	DoorbellChannel     string   // Doorbell channel for the active call
+	ReaderDeviceID      string   // Configured reader device ID (UA-G3, UA-G3-Pro) - set at bootstrap, never cleared
 	IsOnline            bool
 	ViewerIDs           []string // Associated Viewer device IDs for doorbell notifications
 }
