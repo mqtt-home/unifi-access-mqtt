@@ -79,6 +79,14 @@ This will unlock the door. The door will automatically re-lock after the timeout
 
 **Note:** Unlocking a door while a doorbell call is active will answer/end the call.
 
+#### Trigger Doorbell Ring
+
+```json
+{"action": "ring"}
+```
+
+Triggers a doorbell ring event programmatically. This simulates pressing the doorbell button and will notify all configured viewers (e.g., UA Intercom Viewer devices). Useful for testing or automation scenarios.
+
 ## Configuration
 
 Create a `config.json` file:
