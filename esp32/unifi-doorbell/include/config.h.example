@@ -1,0 +1,106 @@
+/**
+ * Configuration for UniFi Access Doorbell Controller
+ *
+ * Standalone implementation - connects directly to UniFi Access controller.
+ * No external gateway required.
+ *
+ * Supported boards:
+ *   - Olimex ESP32-POE (Ethernet) - build with: pio run -e esp32-poe
+ *   - Waveshare ESP32-S3-Zero (WiFi) - build with: pio run -e esp32-s3-zero
+ *
+ * Copy this file to config.h and fill in your values.
+ */
+
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// =============================================================================
+// WiFi Settings (only needed for WiFi boards like ESP32-S3-Zero)
+// =============================================================================
+#define WIFI_SSID           "your-wifi-ssid"
+#define WIFI_PASSWORD       "your-wifi-password"
+
+// =============================================================================
+// UniFi Access Controller Settings
+// =============================================================================
+#define UNIFI_HOST          "192.168.1.1"       // UniFi Access controller IP/hostname
+#define UNIFI_USERNAME      "admin"              // UniFi username
+#define UNIFI_PASSWORD      "your-password"      // UniFi password
+
+// =============================================================================
+// Doorbell Device Configuration
+// =============================================================================
+// These values are used for TRIGGERING doorbell rings.
+// For DISMISSING calls, the device_id is automatically obtained from WebSocket events.
+//
+// You can use either:
+//   - MAC address (e.g., "AA:BB:CC:DD:EE:FF" or "aabbccddeeff")
+//   - Device UUID (e.g., "aabbccdd-1234-5678-9abc-def012345678")
+//
+// MAC addresses are automatically resolved to device IDs at startup.
+// Get these values from UniFi Access UI or the list-devices.sh script.
+
+#define DOORBELL_DEVICE_ID   "AA:BB:CC:DD:EE:FF"  // Reader MAC or UUID (UA-G3, UA-G3-Pro)
+#define DOORBELL_DEVICE_NAME "Entrance"
+#define DOORBELL_DOOR_NAME   "Front Door"
+
+// Viewer device IDs/MACs to notify when triggering a ring (optional)
+// These are the UA Intercom Viewer devices that should show the doorbell call
+// Comment out if you don't have viewers or don't want to notify them
+// #define VIEWER_ID_1       "11:22:33:44:55:66"
+// #define VIEWER_ID_2       "AA:BB:CC:DD:EE:FF"
+
+// =============================================================================
+// MQTT Settings (Optional - for Home Assistant integration)
+// =============================================================================
+#define MQTT_SERVER         "192.168.1.2"        // MQTT broker IP
+#define MQTT_PORT           1883                  // MQTT broker port
+// #define MQTT_USERNAME    "mqtt-user"          // Uncomment if auth required
+// #define MQTT_PASSWORD    "mqtt-pass"          // Uncomment if auth required
+
+// MQTT topic for publishing doorbell state and receiving commands
+// Publishes to: {MQTT_TOPIC}/doorbell  (doorbell state: ringing/idle)
+// Subscribes:   {MQTT_TOPIC}/set       (commands: dismiss, ring)
+#define MQTT_TOPIC          "unifi-doorbell"
+
+// =============================================================================
+// GPIO Pin Configuration
+// =============================================================================
+// Default pins are set automatically based on board type.
+// Uncomment and modify to override defaults.
+//
+// --- Olimex ESP32-POE (Ethernet) ---
+// Safe GPIOs: 2, 4, 5, 12, 13, 14, 15, 16, 32, 33
+// Input-only: 34, 35, 36, 39 (no internal pull-up, need external resistor)
+// Reserved for Ethernet: 17, 18, 19, 21, 22, 23, 25, 26, 27
+// Defaults: Dismiss=36, Ring=39, LED=2
+//
+// --- Waveshare ESP32-S3-Zero (WiFi) ---
+// Available GPIOs: 1-14, 21, 33-48
+// Defaults: Dismiss=4, Ring=5, LED=21
+//
+// #define PIN_DISMISS_TRIGGER   36
+// #define PIN_RING_TRIGGER      39
+// #define PIN_STATUS_LED        2
+//
+// Wiring (for pins without internal pull-up):
+//
+//   3.3V ----[10k]----+---- GPIO
+//                     |
+//                  [Contact Sensor / Button]
+//                     |
+//                    GND
+//
+
+// =============================================================================
+// UniFi Controller SSL Certificate (for ESP-IDF WebSocket client)
+// =============================================================================
+// Extract with: openssl s_client -connect YOUR_HOST:443 -showcerts </dev/null 2>/dev/null | openssl x509 -outform PEM
+// Paste the certificate below (each line in quotes with \n, backslash line continuation)
+
+static const char UNIFI_SERVER_CERT[] = \
+"-----BEGIN CERTIFICATE-----\n" \
+"PASTE_YOUR_CERTIFICATE_LINES_HERE\n" \
+"-----END CERTIFICATE-----\n";
+
+#endif // CONFIG_H
