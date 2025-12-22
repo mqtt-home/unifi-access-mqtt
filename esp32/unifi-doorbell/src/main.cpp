@@ -20,6 +20,7 @@
 #include <time.h>
 
 #include "config.h"
+#include "config_manager.h"
 #include "logging.h"
 #include "network.h"
 #include "unifi_api.h"
@@ -27,6 +28,8 @@
 #include "mqtt_client.h"
 #include "gpio.h"
 #include "status.h"
+#include "webserver.h"
+#include "ap_mode.h"
 
 // =============================================================================
 // Network type for display
@@ -67,11 +70,25 @@ void setup() {
   Serial.print("Network: ");
   Serial.println(NETWORK_TYPE);
 
+  // Load configuration from NVS (or migrate from config.h)
+  loadConfig();
+
   // Initialize components
   setupGpio();
   setupStatusLed();
   initWebSocket();
   randomSeed(esp_random());
+
+  // Check if we should start in AP mode (unconfigured WiFi device)
+  if (shouldStartApMode()) {
+    logPrintln("Starting in AP mode for initial configuration...");
+    setupApMode();
+    setupWebServer();
+    logPrintln("Setup complete - waiting for configuration via web UI");
+    return;
+  }
+
+  // Normal operation mode
   setupNetwork();
 
   // Configure NTP
@@ -93,6 +110,9 @@ void setup() {
   // Initialize MQTT
   setupMqtt();
 
+  // Initialize Web Server
+  setupWebServer();
+
   logPrintln("Setup complete");
   printSystemStatus();
 }
@@ -103,8 +123,19 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
+  // AP mode handling - simplified loop for configuration only
+  if (apModeActive) {
+    apModeLoop();
+    webServerLoop();
+    delay(10);
+    return;
+  }
+
   // Network handling
   networkLoop();
+
+  // Web server handling (runs regardless of UniFi connection)
+  webServerLoop();
 
   // LED: blink when ringing, solid when connected, off otherwise
   bool isRinging = activeRequestId.length() > 0;

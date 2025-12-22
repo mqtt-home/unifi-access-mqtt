@@ -1,12 +1,14 @@
 #include "network.h"
+#include "config_manager.h"
 #include "logging.h"
 #include "unifi_api.h"
 #include "websocket.h"
 
+// WiFi.h must be included before ETH.h (ETH.h depends on WiFi types)
+#include <WiFi.h>
+
 #if defined(USE_ETHERNET)
   #include <ETH.h>
-#elif defined(USE_WIFI)
-  #include <WiFi.h>
 #endif
 
 bool networkConnected = false;
@@ -62,11 +64,17 @@ static unsigned long lastWifiCheck = 0;
 
 void setupNetwork() {
   logPrintln("Initializing WiFi...");
+
+  if (!hasWifiCredentials()) {
+    logPrintln("WiFi: No credentials configured");
+    return;
+  }
+
   WiFi.mode(WIFI_STA);
   WiFi.setHostname("unifi-doorbell");
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFi.begin(appConfig.wifiSsid, appConfig.wifiPassword);
 
-  logPrint("Connecting to WiFi");
+  logPrint("Connecting to WiFi: " + String(appConfig.wifiSsid));
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 30) {
     delay(500);
@@ -89,6 +97,11 @@ void setupNetwork() {
 void networkLoop() {
   unsigned long now = millis();
 
+  // Skip if no credentials
+  if (!hasWifiCredentials()) {
+    return;
+  }
+
   if (WiFi.status() == WL_CONNECTED) {
     if (!networkConnected) {
       logPrintln("WiFi: Reconnected, IP: " + WiFi.localIP().toString());
@@ -107,7 +120,7 @@ void networkLoop() {
       lastWifiCheck = now;
       logPrintln("WiFi: Attempting reconnect...");
       WiFi.disconnect();
-      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+      WiFi.begin(appConfig.wifiSsid, appConfig.wifiPassword);
     }
   }
 }

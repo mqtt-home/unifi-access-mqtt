@@ -1,6 +1,8 @@
 #include "websocket.h"
+#include "config_manager.h"
 #include "logging.h"
 #include "unifi_api.h"
+#include "webserver.h"
 #include "config.h"
 #include <ArduinoJson.h>
 
@@ -13,6 +15,7 @@ static const char* TAG = "websocket";
 
 // WebSocket state
 volatile bool wsConnected = false;
+String wsLastError = "";
 static esp_websocket_client_handle_t wsClient = NULL;
 
 // Active doorbell call state
@@ -46,11 +49,15 @@ static void websocket_event_handler(void* handler_args, esp_event_base_t base,
       ESP_LOGI(TAG, "Connected");
       wsConnected = true;
       wsReconnectFailures = 0;
+      wsLastError = "";  // Clear error on successful connection
       break;
 
     case WEBSOCKET_EVENT_DISCONNECTED:
       ESP_LOGI(TAG, "Disconnected");
       wsConnected = false;
+      if (wsLastError.isEmpty()) {
+        wsLastError = "Disconnected";
+      }
       break;
 
     case WEBSOCKET_EVENT_DATA:
@@ -73,6 +80,7 @@ static void websocket_event_handler(void* handler_args, esp_event_base_t base,
     case WEBSOCKET_EVENT_ERROR:
       ESP_LOGE(TAG, "Error");
       wsConnected = false;
+      wsLastError = "Connection error";
       break;
 
     default:
@@ -124,11 +132,12 @@ void connectWebSocket() {
   if (!isLoggedIn) return;
 
   disconnectWebSocket();
+  wsLastError = "";  // Clear error when attempting new connection
 
   logPrintln("WebSocket: Connecting via ESP-IDF client...");
 
   // Build URL and headers into static buffers
-  snprintf(wsUri, sizeof(wsUri), "wss://%s/proxy/access/api/v2/ws/notification", UNIFI_HOST);
+  snprintf(wsUri, sizeof(wsUri), "wss://%s/proxy/access/api/v2/ws/notification", appConfig.unifiHost);
   snprintf(wsHeaders, sizeof(wsHeaders), "Cookie: TOKEN=%s\r\n", sessionCookie.c_str());
 
   // Configure ESP-IDF websocket client
@@ -141,8 +150,11 @@ void connectWebSocket() {
   ws_cfg.ping_interval_sec = 15;
   ws_cfg.task_stack = 8192;
   ws_cfg.task_prio = 5;
-  // TLS configuration - use embedded cert for self-signed
-  ws_cfg.cert_pem = UNIFI_SERVER_CERT;
+  // TLS configuration - use dynamic certificate
+  const char* cert = getCertificatePtr();
+  if (cert && strlen(cert) > 50) {
+    ws_cfg.cert_pem = cert;
+  }
   ws_cfg.skip_cert_common_name_check = true;
   // TCP keepalive
   ws_cfg.keep_alive_enable = true;
@@ -238,6 +250,9 @@ static void handleWebSocketMessage(const char* message) {
 
         pendingDoorbellStatePublish = true;
         pendingDoorbellRinging = true;
+
+        // Broadcast to web UI clients
+        broadcastDoorbellEvent("ring", activeRequestId, activeDeviceId);
       }
     }
   }
@@ -255,6 +270,9 @@ static void handleWebSocketMessage(const char* message) {
 
         pendingDoorbellStatePublish = true;
         pendingDoorbellRinging = false;
+
+        // Broadcast to web UI clients
+        broadcastDoorbellEvent("idle");
       }
     }
   }

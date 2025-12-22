@@ -8,6 +8,7 @@ extern String sessionCookie;
 extern String userId;
 extern String userName;
 extern bool isLoggedIn;
+extern String unifiLastError;
 
 // Resolved device IDs
 extern String resolvedDoorbellDeviceId;
@@ -19,6 +20,7 @@ bool unifiLogin();
 bool unifiBootstrap();
 bool unifiDismissCall(const String& deviceId, const String& requestId);
 bool unifiTriggerRing();
+String unifiGetTopology();  // Returns JSON with devices
 
 // Helper functions
 String normalizeMAC(const String& mac);

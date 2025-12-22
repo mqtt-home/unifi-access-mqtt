@@ -4,6 +4,7 @@
 
 // WebSocket state (volatile for FreeRTOS task access)
 extern volatile bool wsConnected;
+extern String wsLastError;
 
 // Active doorbell call state
 extern String activeRequestId;
