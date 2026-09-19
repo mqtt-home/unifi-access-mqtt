@@ -101,7 +101,10 @@ void mqttReconnect() {
   }
   netClient.stop();  // Close test connection
 
-  String clientId = "esp32-doorbell-" + String(random(0xffff), HEX);
+  // Stable per device: with a random id the broker kept the pre-reboot session
+  // around until its keepalive ran out, then published that session's will -
+  // a retained "offline" landing ~90s after we had already reported "online".
+  String clientId = "esp32-doorbell-" + String((uint32_t)(ESP.getEfuseMac() >> 24), HEX);
 
   // LWT (Last Will Testament) for bridge state
   String willTopic = String(appConfig.mqttTopic) + "/bridge/state";
