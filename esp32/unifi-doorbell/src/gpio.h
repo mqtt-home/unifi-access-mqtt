@@ -9,6 +9,8 @@ struct GpioState {
     bool lastRawState;      // Last raw reading
     bool triggered;         // True if action was triggered (prevents re-trigger)
     unsigned long lastChange;  // Timestamp of last state change
+    volatile bool pendingTrigger;  // Sampler saw a trigger, main loop must act on it
+    volatile bool pendingRelease;  // Sampler saw the release, main loop must publish it
 };
 
 // GPIO state array

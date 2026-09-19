@@ -129,7 +129,10 @@ void disconnectWebSocket() {
 
 // Static buffers for WebSocket config (must persist during connection)
 static char wsUri[256];
-static char wsHeaders[512];
+// The session token is a JWT whose size is up to the console (746 chars since
+// the UniFi OS update of 2026-08-29). A fixed buffer truncated it *and* the
+// trailing CRLF, which made every handshake malformed - so size it to fit.
+static String wsHeaders;
 
 void connectWebSocket() {
   if (!isLoggedIn) return;
@@ -141,12 +144,12 @@ void connectWebSocket() {
 
   // Build URL and headers into static buffers
   snprintf(wsUri, sizeof(wsUri), "wss://%s/proxy/access/api/v2/ws/notification", appConfig.unifiHost);
-  snprintf(wsHeaders, sizeof(wsHeaders), "Cookie: TOKEN=%s\r\n", sessionCookie.c_str());
+  wsHeaders = "Cookie: TOKEN=" + sessionCookie + "\r\n";
 
   // Configure ESP-IDF websocket client
   esp_websocket_client_config_t ws_cfg = {};
   ws_cfg.uri = wsUri;
-  ws_cfg.headers = wsHeaders;
+  ws_cfg.headers = wsHeaders.c_str();
   ws_cfg.buffer_size = MESSAGE_BUFFER_SIZE;
   ws_cfg.transport = WEBSOCKET_TRANSPORT_OVER_SSL;
   ws_cfg.pingpong_timeout_sec = 30;

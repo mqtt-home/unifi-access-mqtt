@@ -11,6 +11,7 @@ GpioState gpioStates[CFG_MAX_GPIO_PINS];
 
 // Forward declaration for MQTT publishing
 void publishGpioState(int index, bool state);
+static void gpioSamplerTask(void*);
 
 void setupGpio() {
     // Initialize state array
@@ -19,6 +20,8 @@ void setupGpio() {
         gpioStates[i].lastRawState = true;  // Assume pull-up (inactive = HIGH)
         gpioStates[i].triggered = false;
         gpioStates[i].lastChange = 0;
+        gpioStates[i].pendingTrigger = false;
+        gpioStates[i].pendingRelease = false;
     }
 
     // Configure each enabled GPIO
@@ -42,9 +45,19 @@ void setupGpio() {
     }
 
     log("GPIO: " + String(appConfig.gpioCount) + " pins configured");
+
+    static bool samplerStarted = false;
+    if (!samplerStarted) {
+        samplerStarted = true;
+        xTaskCreate(gpioSamplerTask, "gpio", 3072, NULL, 3, NULL);
+    }
 }
 
-void checkGpioTriggers() {
+// Debounce/hold detection. Runs in its own task: the main loop blocks for many
+// seconds at a time (UniFi login, WebSocket teardown), far longer than a
+// doorbell pulse, so sampling there silently dropped rings. The sampler only
+// latches flags; the actions (blocking HTTP/MQTT) stay on the main loop.
+static void sampleGpio() {
     unsigned long now = millis();
 
     for (int i = 0; i < appConfig.gpioCount; i++) {
@@ -68,13 +81,11 @@ void checkGpioTriggers() {
 
                 // If transitioning to inactive, reset trigger flag
                 if (!isActive) {
+                    if (state.triggered) {
+                        state.pendingRelease = true;
+                    }
                     state.triggered = false;
                     state.currentState = false;
-
-                    // For generic GPIOs, publish state change
-                    if (config.action == GPIO_ACTION_GENERIC) {
-                        publishGpioState(i, false);
-                    }
                 }
             }
         }
@@ -87,6 +98,27 @@ void checkGpioTriggers() {
         if (isActive && !state.triggered && (now - state.lastChange) > config.holdMs) {
             state.triggered = true;
             state.currentState = true;
+            state.pendingTrigger = true;
+        }
+    }
+}
+
+static void gpioSamplerTask(void*) {
+    for (;;) {
+        sampleGpio();
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+}
+
+void checkGpioTriggers() {
+    for (int i = 0; i < appConfig.gpioCount; i++) {
+        GpioConfig& config = appConfig.gpios[i];
+        GpioState& state = gpioStates[i];
+
+        if (!config.enabled) continue;
+
+        if (state.pendingTrigger) {
+            state.pendingTrigger = false;
 
             // Execute action based on type
             switch (config.action) {
@@ -118,6 +150,14 @@ void checkGpioTriggers() {
 
                 default:
                     break;
+            }
+        }
+
+        // For generic GPIOs, publish the release after the trigger it belongs to
+        if (state.pendingRelease) {
+            state.pendingRelease = false;
+            if (config.action == GPIO_ACTION_GENERIC) {
+                publishGpioState(i, false);
             }
         }
     }

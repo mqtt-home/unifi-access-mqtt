@@ -225,6 +225,9 @@ void loop() {
         log("WebSocket: Reconnect attempt " + String(getWsReconnectFailures()));
         connectWebSocket();
         mqttLoop();  // Keep MQTT alive after blocking WS connect
+        // Tearing down the old client blocks for seconds; restart the timer so
+        // the new one gets a full WS_RETRY_INTERVAL to finish its handshake
+        lastWsReconnect = millis();
       }
     }
   }
