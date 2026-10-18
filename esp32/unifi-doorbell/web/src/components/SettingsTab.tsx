@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'preact/hooks'
 import type { Config, GpioConfig, MqttTrigger } from '../types'
 import api from '../api/api'
+import { useI18n } from '../lib/i18n'
+import type { Key } from '../lib/i18n'
+import { PlusIcon, XIcon } from './Icons'
 
 interface SettingsTabProps {
   config: Config
@@ -45,6 +48,7 @@ export function SettingsTab({
   onAddMqttTrigger, onRemoveMqttTrigger, onUpdateMqttTrigger,
   onReload
 }: SettingsTabProps) {
+  const { t } = useI18n()
   const [wifiSsid, setWifiSsid] = useState(config.network?.wifiSsid ?? '')
   const [wifiPassword, setWifiPassword] = useState('')
   const [mqttEnabled, setMqttEnabled] = useState(config.mqtt?.enabled ?? false)
@@ -78,11 +82,6 @@ export function SettingsTab({
                  │
                 GND
 
-When button is OPEN:  GPIO reads HIGH (3.3V)
-When button is PRESSED: GPIO reads LOW (GND)
-
-Wiring: Connect one side of button/switch to GPIO,
-        other side to GND.
 `,
     down: `
 ┌─────────────────────────────────┐
@@ -100,11 +99,6 @@ Wiring: Connect one side of button/switch to GPIO,
                  │
                3.3V
 
-When button is OPEN:  GPIO reads LOW (GND)
-When button is PRESSED: GPIO reads HIGH (3.3V)
-
-Wiring: Connect one side of button/switch to GPIO,
-        other side to 3.3V.
 `
   }
 
@@ -137,19 +131,19 @@ Wiring: Connect one side of button/switch to GPIO,
     })
 
     if (result.success) {
-      alert('Settings saved! Reboot to apply changes.')
+      alert(t('set.saved'))
     } else {
-      alert('Failed to save: ' + (result.message ?? 'Unknown error'))
+      alert(t('set.saveFailed', { e: result.message ?? t('unknownError') }))
     }
   }
 
   const handleAddGpioFromPreset = (pin: typeof gpioPresets['olimex-poe']['pins'][0]) => {
     if (gpios.length >= 8) {
-      alert('Maximum 8 GPIO pins allowed')
+      alert(t('set.maxGpio'))
       return
     }
     if (gpios.some(g => g.pin === pin.pin)) {
-      alert(`GPIO ${pin.pin} is already configured`)
+      alert(t('set.gpioUsed', { pin: pin.pin }))
       return
     }
     onAddGpio({
@@ -166,7 +160,7 @@ Wiring: Connect one side of button/switch to GPIO,
 
   const handleAddCustomGpio = () => {
     if (gpios.length >= 8) {
-      alert('Maximum 8 GPIO pins allowed')
+      alert(t('set.maxGpio'))
       return
     }
     onAddGpio({
@@ -174,7 +168,7 @@ Wiring: Connect one side of button/switch to GPIO,
       pin: 34,
       action: 'ring_button',
       pullMode: 'up',
-      label: 'New GPIO',
+      label: t('set.newGpio'),
       debounceMs: 50,
       holdMs: 100
     })
@@ -183,7 +177,7 @@ Wiring: Connect one side of button/switch to GPIO,
 
   const handleAddMqttTrigger = () => {
     if (mqttTriggers.length >= 4) {
-      alert('Maximum 4 MQTT triggers allowed')
+      alert(t('set.maxTrigger'))
       return
     }
     onAddMqttTrigger({
@@ -192,500 +186,303 @@ Wiring: Connect one side of button/switch to GPIO,
       jsonField: 'contact',
       triggerValue: 'false',
       action: 'dismiss',
-      label: 'New Trigger'
+      label: t('set.newTrigger')
     })
   }
 
   const getGpioHelpText = (gpio: GpioConfig) => {
-    const pullDesc = gpio.pullMode === 'up'
-      ? 'Connect button between GPIO and GND.'
-      : 'Connect button between GPIO and 3.3V.'
-
-    switch (gpio.action) {
-      case 'ring_button':
-        return `Ring Button: Triggers a doorbell ring when pressed. ${pullDesc}`
-      case 'door_contact':
-        return `Door Contact: Dismisses active call when triggered. ${pullDesc}`
-      case 'generic':
-        const topic = mqttTopic || 'doorbell'
-        const label = (gpio.label || 'gpio').toLowerCase().replace(/\s+/g, '_')
-        return `Generic (MQTT): Publishes to ${topic}/gpio/${label}. ${pullDesc}`
-      default:
-        return pullDesc
-    }
+    const pull = t(gpio.pullMode === 'up' ? 'set.help.up' : 'set.help.down')
+    const topic = mqttTopic || 'doorbell'
+    const label = (gpio.label || 'gpio').toLowerCase().replace(/\s+/g, '_')
+    return t(`set.help.${gpio.action}` as Key, { pull, topic: `${topic}/gpio/${label}` })
   }
 
   const getMqttTriggerHelpText = (trigger: MqttTrigger) => {
-    const actionText = trigger.action === 'ring'
-      ? 'trigger a doorbell ring'
-      : 'dismiss the active call'
+    if (!trigger.topic || !trigger.jsonField) return t('set.trigger.incomplete')
+    return t('set.trigger.help', {
+      topic: trigger.topic,
+      field: trigger.jsonField,
+      value: trigger.triggerValue,
+      action: t(trigger.action === 'ring' ? 'set.trigger.ring' : 'set.trigger.dismiss')
+    })
+  }
 
-    if (!trigger.topic || !trigger.jsonField) {
-      return 'Configure the topic and JSON field to subscribe to.'
-    }
-
-    return `When ${trigger.topic} receives a message with "${trigger.jsonField}": ${trigger.triggerValue}, this will ${actionText}.`
+  const input = (value: string, onInput: (v: string) => void, opts: { password?: boolean; placeholder?: string; id?: string } = {}) => {
+    const handle = (e: Event) => onInput((e.target as HTMLInputElement).value)
+    return opts.password
+      ? <input id={opts.id} type="password" placeholder={opts.placeholder} value={value} onInput={handle} />
+      : <input id={opts.id} type="text" placeholder={opts.placeholder} value={value} onInput={handle} />
   }
 
   return (
-    <section>
-      {!isEthernet && (
+    <section class="stack">
+      <div class="cards">
+        {!isEthernet && (
+          <div class="card">
+            <div class="card-h"><h3>{t('set.wifi')}</h3></div>
+            <div class="card-b">
+              <div class="form-group">
+                <label for="s-ssid">{t('set.ssid')}</label>
+                {input(wifiSsid, setWifiSsid, { id: 's-ssid', placeholder: t('set.ssidPh') })}
+              </div>
+              <div class="form-group">
+                <label for="s-wpass">{t('set.password')}</label>
+                {input(wifiPassword, setWifiPassword, { id: 's-wpass', password: true, placeholder: t('set.keep') })}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div class="card">
-          <div class="card-header">
-            <h2>WiFi Network</h2>
+          <div class="card-h col">
+            <h3>{t('set.mqtt')}</h3>
+            <p class="hint">{t('set.mqttSub')}</p>
           </div>
-          <div class="card-body">
-            <div class="form-group">
-              <label>SSID</label>
-              <input
-                type="text"
-                placeholder="Network name"
-                value={wifiSsid}
-                onInput={(e) => setWifiSsid((e.target as HTMLInputElement).value)}
-              />
-            </div>
-            <div class="form-group">
-              <label>Password</label>
-              <input
-                type="password"
-                placeholder="Leave blank to keep current"
-                value={wifiPassword}
-                onInput={(e) => setWifiPassword((e.target as HTMLInputElement).value)}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div class="card">
-        <div class="card-header">
-          <h2>MQTT Integration</h2>
-          <p>Optional: Publish doorbell events to an MQTT broker</p>
-        </div>
-        <div class="card-body">
-          <div class="form-group">
-            <div class="toggle-group">
-              <label class="toggle">
-                <input
-                  type="checkbox"
-                  checked={mqttEnabled}
-                  onChange={(e) => setMqttEnabled((e.target as HTMLInputElement).checked)}
-                />
+          <div class="card-b">
+            <label class="toggle-group">
+              <span class="toggle">
+                <input type="checkbox" checked={mqttEnabled} onChange={(e) => setMqttEnabled((e.target as HTMLInputElement).checked)} />
                 <span class="toggle-slider"></span>
-              </label>
-              <span>Enable MQTT</span>
+              </span>
+              <span>{t('set.mqttEnable')}</span>
+            </label>
+
+            {mqttEnabled && (
+              <>
+                <div class="form-group">
+                  <label for="s-mserver">{t('set.server')}</label>
+                  {input(mqttServer, setMqttServer, { id: 's-mserver', placeholder: 'mqtt.local' })}
+                </div>
+                <div class="grid-2">
+                  <div class="form-group">
+                    <label for="s-mport">{t('set.port')}</label>
+                    <input
+                      id="s-mport" type="number" min={1} max={65535} value={mqttPort}
+                      onInput={(e) => setMqttPort(parseInt((e.target as HTMLInputElement).value) || 1883)}
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="s-mtopic">{t('set.topic')}</label>
+                    {input(mqttTopic, setMqttTopic, { id: 's-mtopic', placeholder: 'home/doorbell' })}
+                  </div>
+                </div>
+                <label class="toggle-group">
+                  <span class="toggle">
+                    <input type="checkbox" checked={mqttAuth} onChange={(e) => setMqttAuth((e.target as HTMLInputElement).checked)} />
+                    <span class="toggle-slider"></span>
+                  </span>
+                  <span>{t('set.auth')}</span>
+                </label>
+                {mqttAuth && (
+                  <div class="grid-2">
+                    <div class="form-group">
+                      <label for="s-muser">{t('set.username')}</label>
+                      {input(mqttUsername, setMqttUsername, { id: 's-muser' })}
+                    </div>
+                    <div class="form-group">
+                      <label for="s-mpass">{t('set.password')}</label>
+                      {input(mqttPassword, setMqttPassword, { id: 's-mpass', password: true, placeholder: t('set.keep') })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><h3>{t('set.web')}</h3></div>
+          <div class="card-b">
+            <div class="form-group">
+              <label for="s-wuser">{t('set.username')}</label>
+              {input(webUsername, setWebUsername, { id: 's-wuser' })}
+            </div>
+            <div class="form-group">
+              <label for="s-wnew">{t('set.newPassword')}</label>
+              {input(webPassword, setWebPassword, { id: 's-wnew', password: true, placeholder: t('set.keep') })}
             </div>
           </div>
-
-          {mqttEnabled && (
-            <>
-              <div class="form-group">
-                <label>Server</label>
-                <input
-                  type="text"
-                  placeholder="mqtt.local"
-                  value={mqttServer}
-                  onInput={(e) => setMqttServer((e.target as HTMLInputElement).value)}
-                />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div class="form-group">
-                  <label>Port</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={65535}
-                    value={mqttPort}
-                    onInput={(e) => setMqttPort(parseInt((e.target as HTMLInputElement).value) || 1883)}
-                  />
-                </div>
-                <div class="form-group">
-                  <label>Topic</label>
-                  <input
-                    type="text"
-                    placeholder="home/doorbell"
-                    value={mqttTopic}
-                    onInput={(e) => setMqttTopic((e.target as HTMLInputElement).value)}
-                  />
-                </div>
-              </div>
-              <div class="form-group">
-                <div class="toggle-group">
-                  <label class="toggle">
-                    <input
-                      type="checkbox"
-                      checked={mqttAuth}
-                      onChange={(e) => setMqttAuth((e.target as HTMLInputElement).checked)}
-                    />
-                    <span class="toggle-slider"></span>
-                  </label>
-                  <span>Authentication Required</span>
-                </div>
-              </div>
-              {mqttAuth && (
-                <>
-                  <div class="form-group">
-                    <label>Username</label>
-                    <input
-                      type="text"
-                      value={mqttUsername}
-                      onInput={(e) => setMqttUsername((e.target as HTMLInputElement).value)}
-                    />
-                  </div>
-                  <div class="form-group">
-                    <label>Password</label>
-                    <input
-                      type="password"
-                      placeholder="Leave blank to keep current"
-                      value={mqttPassword}
-                      onInput={(e) => setMqttPassword((e.target as HTMLInputElement).value)}
-                    />
-                  </div>
-                </>
-              )}
-            </>
-          )}
         </div>
       </div>
 
       <div class="card">
-        <div class="card-header">
-          <h2>Web Interface Security</h2>
+        <div class="card-h col">
+          <h3>{t('set.gpio')}</h3>
+          <p class="hint">{t('set.gpioSub')}</p>
         </div>
-        <div class="card-body">
-          <div class="form-group">
-            <label>Username</label>
-            <input
-              type="text"
-              value={webUsername}
-              onInput={(e) => setWebUsername((e.target as HTMLInputElement).value)}
-            />
-          </div>
-          <div class="form-group">
-            <label>New Password</label>
-            <input
-              type="password"
-              placeholder="Leave blank to keep current"
-              value={webPassword}
-              onInput={(e) => setWebPassword((e.target as HTMLInputElement).value)}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2>GPIO Configuration</h2>
-          <p>Configure physical buttons and sensors connected to GPIO pins</p>
-        </div>
-        <div class="card-body">
+        <div class="card-b">
           {gpios.map((gpio, index) => (
-            <div key={index} class="gpio-item">
-              <div class="gpio-header">
-                <span class="gpio-title">GPIO {gpio.pin} - {gpio.label || 'Unnamed'}</span>
-                <button class="btn btn-danger btn-sm" onClick={() => onRemoveGpio(index)}>Remove</button>
+            <div key={index} class="item">
+              <div class="item-h">
+                <span class="item-t">GPIO {gpio.pin} · {gpio.label || t('set.unnamed')}</span>
+                <button type="button" class="btn sm danger" onClick={() => onRemoveGpio(index)}>{t('set.remove')}</button>
               </div>
-              <div class="gpio-fields">
+              <div class="fields-4">
                 <div class="form-group">
-                  <label>Pin Number</label>
+                  <label>{t('set.pin')}</label>
                   <input
-                    type="number"
-                    min={0}
-                    max={48}
-                    value={gpio.pin}
+                    type="number" min={0} max={48} value={gpio.pin}
                     onChange={(e) => onUpdateGpio(index, 'pin', parseInt((e.target as HTMLInputElement).value))}
                   />
                 </div>
                 <div class="form-group">
-                  <label>Label</label>
+                  <label>{t('set.label')}</label>
                   <input
-                    type="text"
-                    value={gpio.label}
+                    type="text" value={gpio.label}
                     onChange={(e) => onUpdateGpio(index, 'label', (e.target as HTMLInputElement).value)}
                   />
                 </div>
                 <div class="form-group">
-                  <label>Action</label>
-                  <select
-                    value={gpio.action}
-                    onChange={(e) => onUpdateGpio(index, 'action', (e.target as HTMLSelectElement).value)}
-                  >
-                    <option value="ring_button">Ring Button</option>
-                    <option value="door_contact">Door Contact</option>
-                    <option value="generic">Generic (MQTT)</option>
+                  <label>{t('set.action')}</label>
+                  <select value={gpio.action} onChange={(e) => onUpdateGpio(index, 'action', (e.target as HTMLSelectElement).value)}>
+                    <option value="ring_button">{t('action.ring_button')}</option>
+                    <option value="door_contact">{t('action.door_contact')}</option>
+                    <option value="generic">{t('action.generic')}</option>
                   </select>
                 </div>
                 <div class="form-group">
-                  <label>Pull Mode</label>
-                  <select
-                    value={gpio.pullMode}
-                    onChange={(e) => onUpdateGpio(index, 'pullMode', (e.target as HTMLSelectElement).value)}
-                  >
-                    <option value="up">Pull-Up (Active LOW)</option>
-                    <option value="down">Pull-Down (Active HIGH)</option>
+                  <label>{t('set.pull')}</label>
+                  <select value={gpio.pullMode} onChange={(e) => onUpdateGpio(index, 'pullMode', (e.target as HTMLSelectElement).value)}>
+                    <option value="up">{t('set.pullUp')}</option>
+                    <option value="down">{t('set.pullDown')}</option>
                   </select>
                 </div>
               </div>
-              <div class="gpio-help" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-                <span>{getGpioHelpText(gpio)}</span>
+              <div class="item-help">
+                <span class="grow">{getGpioHelpText(gpio)}</span>
                 <button
-                  class="btn btn-secondary btn-sm"
-                  onClick={() => setShowWiringDiagram(gpio.pullMode)}
-                  title="Show wiring diagram"
-                  style={{ padding: '4px 10px', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 }}
+                  type="button" class="btn sm" onClick={() => setShowWiringDiagram(gpio.pullMode)}
+                  title={t('set.wiring')} aria-label={t('set.wiring')}
                 >?</button>
               </div>
             </div>
           ))}
-          <button class="btn btn-secondary" onClick={() => setShowGpioMenu(true)} style={{ marginTop: '16px' }}>
-            + Add GPIO
-          </button>
+          <button type="button" class="btn" onClick={() => setShowGpioMenu(true)}><PlusIcon size={16} />{t('set.addGpio')}</button>
         </div>
       </div>
 
       {mqttEnabled && (
         <div class="card">
-          <div class="card-header">
-            <h2>MQTT Triggers</h2>
-            <p>Subscribe to MQTT topics and trigger actions based on JSON field values</p>
+          <div class="card-h col">
+            <h3>{t('set.triggers')}</h3>
+            <p class="hint">{t('set.triggersSub')}</p>
           </div>
-          <div class="card-body">
-            {mqttTriggers.length === 0 && (
-              <p class="form-hint">No MQTT triggers configured. Add a trigger to react to MQTT messages.</p>
-            )}
+          <div class="card-b">
+            {mqttTriggers.length === 0 && <p class="empty">{t('set.triggersEmpty')}</p>}
             {mqttTriggers.map((trigger, index) => (
-              <div key={index} class="mqtt-trigger-item">
-                <div class="mqtt-trigger-header">
-                  <span class="mqtt-trigger-title">{trigger.label || 'Unnamed Trigger'}</span>
-                  <button class="btn btn-danger btn-sm" onClick={() => onRemoveMqttTrigger(index)}>Remove</button>
+              <div key={index} class="item">
+                <div class="item-h">
+                  <span class="item-t">{trigger.label || t('set.unnamedTrigger')}</span>
+                  <button type="button" class="btn sm danger" onClick={() => onRemoveMqttTrigger(index)}>{t('set.remove')}</button>
                 </div>
-                <div class="mqtt-trigger-fields">
+                <div class="fields-5">
                   <div class="form-group">
-                    <label>Label</label>
+                    <label>{t('set.label')}</label>
                     <input
-                      type="text"
-                      placeholder="Front Door Contact"
-                      value={trigger.label}
+                      type="text" placeholder={t('set.triggerLabelPh')} value={trigger.label}
                       onChange={(e) => onUpdateMqttTrigger(index, 'label', (e.target as HTMLInputElement).value)}
                     />
                   </div>
                   <div class="form-group">
-                    <label>Topic</label>
+                    <label>{t('set.topic')}</label>
                     <input
-                      type="text"
-                      placeholder="zigbee2mqtt/door_sensor"
-                      value={trigger.topic}
+                      type="text" placeholder="zigbee2mqtt/door_sensor" value={trigger.topic}
                       onChange={(e) => onUpdateMqttTrigger(index, 'topic', (e.target as HTMLInputElement).value)}
                     />
                   </div>
                   <div class="form-group">
-                    <label>JSON Field</label>
+                    <label>{t('set.jsonField')}</label>
                     <input
-                      type="text"
-                      placeholder="contact"
-                      value={trigger.jsonField}
+                      type="text" placeholder="contact" value={trigger.jsonField}
                       onChange={(e) => onUpdateMqttTrigger(index, 'jsonField', (e.target as HTMLInputElement).value)}
                     />
                   </div>
                   <div class="form-group">
-                    <label>Trigger Value</label>
+                    <label>{t('set.triggerValue')}</label>
                     <input
-                      type="text"
-                      placeholder="false"
-                      value={trigger.triggerValue}
+                      type="text" placeholder="false" value={trigger.triggerValue}
                       onChange={(e) => onUpdateMqttTrigger(index, 'triggerValue', (e.target as HTMLInputElement).value)}
                     />
                   </div>
                   <div class="form-group">
-                    <label>Action</label>
-                    <select
-                      value={trigger.action}
-                      onChange={(e) => onUpdateMqttTrigger(index, 'action', (e.target as HTMLSelectElement).value)}
-                    >
-                      <option value="dismiss">Dismiss Call</option>
-                      <option value="ring">Ring Doorbell</option>
+                    <label>{t('set.action')}</label>
+                    <select value={trigger.action} onChange={(e) => onUpdateMqttTrigger(index, 'action', (e.target as HTMLSelectElement).value)}>
+                      <option value="dismiss">{t('set.dismissCall')}</option>
+                      <option value="ring">{t('set.ringDoorbell')}</option>
                     </select>
                   </div>
                 </div>
-                <div class="mqtt-trigger-help">{getMqttTriggerHelpText(trigger)}</div>
+                <div class="item-help">{getMqttTriggerHelpText(trigger)}</div>
               </div>
             ))}
-            <button class="btn btn-secondary" onClick={handleAddMqttTrigger} style={{ marginTop: '16px' }}>
-              + Add Trigger
-            </button>
+            <button type="button" class="btn" onClick={handleAddMqttTrigger}><PlusIcon size={16} />{t('set.addTrigger')}</button>
           </div>
         </div>
       )}
 
-      <div class="btn-group">
-        <button class="btn btn-primary" onClick={handleSave}>Save Settings</button>
-        <button class="btn btn-secondary" onClick={onReload}>Reload</button>
+      <div class="save-bar">
+        <button type="button" class="btn primary" onClick={handleSave}>{t('set.save')}</button>
+        <button type="button" class="btn" onClick={onReload}>{t('set.reload')}</button>
       </div>
 
       {showGpioMenu && (
-        <>
-          <div
-            style={{
-              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-              background: 'rgba(0,0,0,0.6)', zIndex: 999
-            }}
-            onClick={() => setShowGpioMenu(false)}
-          />
-          <div style={{
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
-            borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)',
-            zIndex: 1000, width: '90%', maxWidth: '600px', maxHeight: '85vh', overflow: 'hidden',
-            display: 'flex', flexDirection: 'column'
-          }}>
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '20px 24px', borderBottom: '1px solid var(--border-color)'
-            }}>
-              <h3 style={{ margin: 0, fontSize: '18px' }}>Add GPIO Pin</h3>
-              <button
-                style={{
-                  background: 'none', border: 'none', fontSize: '24px',
-                  cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px 8px'
-                }}
-                onClick={() => setShowGpioMenu(false)}
-              >&times;</button>
+        <div class="modal-bg" onClick={() => setShowGpioMenu(false)}>
+          <div class="modal card wide" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div class="modal-h">
+              <h3>{t('set.addTitle')}</h3>
+              <button type="button" class="icon-btn" onClick={() => setShowGpioMenu(false)} aria-label={t('close')}><XIcon /></button>
             </div>
-            <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-              <div style={{
-                width: '180px', borderRight: '1px solid var(--border-color)',
-                padding: '16px', background: 'var(--bg-tertiary)', flexShrink: 0
-              }}>
-                <div style={{
-                  fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-muted)',
-                  marginBottom: '12px', letterSpacing: '0.5px'
-                }}>Select Board</div>
+            <div class="modal-b">
+              <div class="seg board-seg" role="group" aria-label={t('set.board')}>
                 {Object.entries(gpioPresets).map(([key, board]) => (
-                  <div
-                    key={key}
-                    style={{
-                      display: 'flex', alignItems: 'center', padding: '10px 12px', marginBottom: '6px',
-                      borderRadius: 'var(--radius)', cursor: 'pointer',
-                      background: key === selectedBoard ? 'rgba(47, 129, 247, 0.15)' : 'transparent',
-                      border: key === selectedBoard ? '1px solid var(--accent-blue)' : '1px solid transparent'
-                    }}
-                    onClick={() => setSelectedBoard(key)}
-                  >
-                    <input type="radio" checked={key === selectedBoard} style={{ marginRight: '10px' }} onChange={() => {}} />
-                    <label style={{ cursor: 'pointer', fontSize: '14px' }}>{board.name}</label>
-                  </div>
+                  <button key={key} type="button" aria-pressed={key === selectedBoard} onClick={() => setSelectedBoard(key)}>
+                    {board.name}
+                  </button>
                 ))}
               </div>
-              <div style={{ flex: 1, padding: '20px', overflowY: 'auto' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px' }}>
-                  {gpioPresets[selectedBoard].pins.map(pin => {
-                    const isUsed = gpios.some(g => g.pin === pin.pin)
-                    return (
-                      <div
-                        key={pin.pin}
-                        style={{
-                          background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)',
-                          borderRadius: 'var(--radius)', padding: '16px', cursor: isUsed ? 'not-allowed' : 'pointer',
-                          opacity: isUsed ? 0.5 : 1, transition: 'all 0.15s'
-                        }}
-                        onClick={() => !isUsed && handleAddGpioFromPreset(pin)}
-                      >
-                        <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--accent-blue)', marginBottom: '4px' }}>
-                          GPIO {pin.pin}
-                        </div>
-                        <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '4px' }}>
-                          {pin.label}
-                        </div>
-                        <span style={{
-                          display: 'inline-block', fontSize: '10px', textTransform: 'uppercase',
-                          padding: '2px 6px', borderRadius: '3px', marginTop: '8px',
-                          background: 'rgba(47, 129, 247, 0.15)', color: 'var(--accent-blue)'
-                        }}>
-                          {pin.action === 'ring_button' ? 'Ring' : pin.action === 'door_contact' ? 'Door' : 'Generic'}
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
-                <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid var(--border-color)' }}>
-                  <button
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '12px', width: '100%', padding: '16px',
-                      background: 'var(--bg-tertiary)', border: '2px dashed var(--border-color)',
-                      borderRadius: 'var(--radius)', cursor: 'pointer', transition: 'all 0.15s'
-                    }}
-                    onClick={handleAddCustomGpio}
-                  >
-                    <span style={{ fontSize: '24px', color: 'var(--accent-blue)' }}>+</span>
-                    <div style={{ textAlign: 'left' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Custom GPIO</div>
-                      <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Add a blank GPIO with manual configuration</div>
-                    </div>
-                  </button>
-                </div>
+              <div class="pin-grid">
+                {gpioPresets[selectedBoard].pins.map(pin => {
+                  const isUsed = gpios.some(g => g.pin === pin.pin)
+                  return (
+                    <button
+                      key={pin.pin} type="button" class="pin-tile" disabled={isUsed}
+                      onClick={() => !isUsed && handleAddGpioFromPreset(pin)}
+                    >
+                      <span class="pin-n mono">GPIO {pin.pin}</span>
+                      <span class="pin-l">{pin.label}</span>
+                      <span class="chip">{t(`action.short.${pin.action}` as Key)}</span>
+                    </button>
+                  )
+                })}
               </div>
+              <button type="button" class="pin-custom" onClick={handleAddCustomGpio}>
+                <PlusIcon />
+                <span>
+                  <span class="pin-l">{t('set.custom')}</span>
+                  <span class="hint">{t('set.customSub')}</span>
+                </span>
+              </button>
             </div>
           </div>
-        </>
+        </div>
       )}
 
       {showWiringDiagram && (
-        <>
-          <div
-            style={{
-              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-              background: 'rgba(0,0,0,0.6)', zIndex: 999
-            }}
-            onClick={() => setShowWiringDiagram(null)}
-          />
-          <div style={{
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
-            borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)',
-            zIndex: 1000, width: '90%', maxWidth: '500px', maxHeight: '85vh', overflow: 'hidden'
-          }}>
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '16px 20px', borderBottom: '1px solid var(--border-color)'
-            }}>
-              <h3 style={{ margin: 0, fontSize: '16px' }}>
-                Wiring Diagram: {showWiringDiagram === 'up' ? 'Pull-Up (Active LOW)' : 'Pull-Down (Active HIGH)'}
-              </h3>
-              <button
-                style={{
-                  background: 'none', border: 'none', fontSize: '24px',
-                  cursor: 'pointer', color: 'var(--text-secondary)', padding: '4px 8px'
-                }}
-                onClick={() => setShowWiringDiagram(null)}
-              >&times;</button>
+        <div class="modal-bg" onClick={() => setShowWiringDiagram(null)}>
+          <div class="modal card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div class="modal-h">
+              <h3>{t('set.wiringTitle')}</h3>
+              <button type="button" class="icon-btn" onClick={() => setShowWiringDiagram(null)} aria-label={t('close')}><XIcon /></button>
             </div>
-            <div style={{ padding: '20px' }}>
-              <pre style={{
-                background: 'var(--bg-tertiary)',
-                padding: '16px',
-                borderRadius: 'var(--radius)',
-                fontSize: '12px',
-                lineHeight: '1.4',
-                overflow: 'auto',
-                fontFamily: "'SF Mono', Monaco, 'Cascadia Code', monospace",
-                whiteSpace: 'pre',
-                margin: 0
-              }}>
-                {wiringDiagrams[showWiringDiagram]}
-              </pre>
-            </div>
-            <div style={{ padding: '0 20px 20px', display: 'flex', justifyContent: 'center', gap: '12px' }}>
-              <button
-                class={`btn ${showWiringDiagram === 'up' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setShowWiringDiagram('up')}
-              >Pull-Up</button>
-              <button
-                class={`btn ${showWiringDiagram === 'down' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setShowWiringDiagram('down')}
-              >Pull-Down</button>
+            <div class="modal-b">
+              <div class="seg" role="group">
+                <button type="button" aria-pressed={showWiringDiagram === 'up'} onClick={() => setShowWiringDiagram('up')}>{t('set.pullUp')}</button>
+                <button type="button" aria-pressed={showWiringDiagram === 'down'} onClick={() => setShowWiringDiagram('down')}>{t('set.pullDown')}</button>
+              </div>
+              <pre class="diagram">{wiringDiagrams[showWiringDiagram]}{'\n'}{t(showWiringDiagram === 'up' ? 'set.wiring.up' : 'set.wiring.down')}</pre>
             </div>
           </div>
-        </>
+        </div>
       )}
     </section>
   )

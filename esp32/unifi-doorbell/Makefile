@@ -57,7 +57,7 @@ help:
 	@echo ""
 	@echo "$(CYAN)Setup:$(NC)"
 	@echo "  make setup-venv     - Create Python venv and install PlatformIO"
-	@echo "  make install-deps   - Install npm dependencies for web"
+	@echo "  make install-deps   - Install web dependencies (pnpm)"
 	@echo ""
 	@echo "$(CYAN)Development:$(NC)"
 	@echo "  make dev            - Start web dev server with hot reload"
@@ -90,7 +90,7 @@ build: build-web build-firmware build-fs
 
 build-web:
 	@echo "$(CYAN)Building web UI...$(NC)"
-	@cd $(WEB_DIR) && npm run build
+	@cd $(WEB_DIR) && pnpm run build
 	@echo "$(GREEN)Web UI built -> $(DATA_DIR)/$(NC)"
 
 build-firmware:
@@ -157,7 +157,7 @@ upload-all: upload upload-fs
 dev:
 	@echo "$(CYAN)Starting web dev server...$(NC)"
 	@echo "$(YELLOW)Note: API calls will fail without the ESP32 backend$(NC)"
-	@cd $(WEB_DIR) && npm run dev
+	@cd $(WEB_DIR) && pnpm run dev
 
 monitor:
 	@$(PIO) device monitor -e $(ENV)
@@ -168,7 +168,7 @@ monitor:
 
 install-deps:
 	@echo "$(CYAN)Installing web dependencies...$(NC)"
-	@cd $(WEB_DIR) && npm install
+	@cd $(WEB_DIR) && pnpm install --frozen-lockfile
 	@echo "$(GREEN)Dependencies installed!$(NC)"
 
 setup-venv:

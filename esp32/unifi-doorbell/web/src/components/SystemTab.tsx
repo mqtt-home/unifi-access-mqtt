@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'preact/hooks'
 import type { UpdateInfo } from '../types'
 import api from '../api/api'
+import { useI18n } from '../lib/i18n'
 
 interface LogEntry {
   timestamp: string
@@ -18,6 +19,7 @@ interface SystemTabProps {
 }
 
 export function SystemTab({ version, board, logs, onClearLogs, updateInfo, onCheckUpdate, checkingUpdate }: SystemTabProps) {
+  const { t } = useI18n()
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -40,185 +42,142 @@ export function SystemTab({ version, board, logs, onClearLogs, updateInfo, onChe
 
   const handleUpload = async () => {
     if (!selectedFile) {
-      alert('Please select a firmware file')
+      alert(t('sys.noFile'))
       return
     }
 
     if (!selectedFile.name.endsWith('.bin')) {
-      alert('Please select a .bin file')
+      alert(t('sys.notBin'))
       return
     }
 
-    if (!confirm('Upload firmware and update? The device will reboot after update.')) {
+    if (!confirm(t('sys.uploadConfirm'))) {
       return
     }
 
     setUploading(true)
     setUploadProgress(0)
-    setUploadStatus('Uploading...')
+    setUploadStatus(t('sys.uploading', { p: 0 }))
 
     try {
       const result = await api.uploadFirmware(selectedFile, (percent) => {
         setUploadProgress(percent)
-        setUploadStatus(`Uploading: ${percent}%`)
+        setUploadStatus(t('sys.uploading', { p: percent }))
       })
 
       if (result.success) {
-        setUploadStatus('Update complete! Rebooting...')
+        setUploadStatus(t('sys.uploadDone'))
         setTimeout(() => location.reload(), 10000)
       } else {
-        alert('Update failed: ' + (result.message ?? 'Unknown error'))
+        alert(t('sys.updateFailed', { e: result.message ?? t('unknownError') }))
         setUploading(false)
         setUploadStatus('')
       }
     } catch (err) {
-      alert('Upload failed: ' + (err as Error).message)
+      alert(t('sys.uploadFailed', { e: (err as Error).message }))
       setUploading(false)
       setUploadStatus('')
     }
   }
 
   const handleReboot = async () => {
-    if (!confirm('Reboot the device?')) return
+    if (!confirm(t('sys.rebootConfirm'))) return
     try {
       await api.reboot()
-      alert('Device is rebooting...')
+      alert(t('sys.rebooting'))
     } catch {
       // Expected - device reboots and connection drops
     }
   }
 
   const handleReset = async () => {
-    if (!confirm('This will erase all configuration and reboot. Continue?')) return
-    if (!confirm('Are you sure? This cannot be undone!')) return
+    if (!confirm(t('sys.resetConfirm'))) return
+    if (!confirm(t('sys.resetConfirm2'))) return
     try {
       await api.factoryReset()
-      alert('Configuration reset. Device is rebooting...')
+      alert(t('sys.resetDone'))
     } catch {
       // Expected - device reboots and connection drops
     }
   }
 
-  const escapeHtml = (text: string) => {
-    const div = document.createElement('div')
-    div.textContent = text
-    return div.innerHTML
-  }
-
   return (
-    <section>
-      <div class="card">
-        <div class="card-header">
-          <h2>Firmware</h2>
-        </div>
-        <div class="card-body">
-          <div style={{ marginBottom: '16px' }}>
-            <p>
-              Version: <strong style={{ fontFamily: 'monospace', fontSize: '12px' }}>{version}</strong>
-            </p>
-            <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
-              Board: {board || 'unknown'}
-            </p>
-          </div>
+    <section class="stack">
+      <div class="cards">
+        <div class="card">
+          <div class="card-h"><h3>{t('sys.firmware')}</h3></div>
+          <div class="card-b">
+            <div class="kv"><span class="k">{t('sys.version')}</span><span class="v mono">{version}</span></div>
+            <div class="kv"><span class="k">{t('sys.board')}</span><span class="v mono">{board || 'unknown'}</span></div>
 
-          {updateInfo?.available && (
-            <div class="alert alert-info" style={{ marginBottom: '16px', flexDirection: 'column', alignItems: 'flex-start' }}>
-              <strong>Update Available!</strong>
-              <p style={{ margin: '8px 0' }}>
-                Version {updateInfo.latestVersion} is available (current: {updateInfo.currentVersion})
-              </p>
-              <a
-                href={updateInfo.manifestUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="btn btn-primary btn-sm"
-              >
-                Open Web Installer
-              </a>
+            {updateInfo?.available && (
+              <div class="note info col">
+                <strong>{t('sys.updateTitle')}</strong>
+                <span>{t('sys.updateText', { latest: updateInfo.latestVersion, current: updateInfo.currentVersion })}</span>
+                <a href={updateInfo.manifestUrl} target="_blank" rel="noopener noreferrer" class="btn">
+                  {t('sys.installer')}
+                </a>
+              </div>
+            )}
+
+            <div class="row wrap-row">
+              {updateInfo && !updateInfo.available && <p class="hint grow">{t('sys.latest')}</p>}
+              <button type="button" class="btn" onClick={onCheckUpdate} disabled={checkingUpdate}>
+                {checkingUpdate ? <><span class="spinner"></span> {t('sys.checking')}</> : t('sys.check')}
+              </button>
             </div>
-          )}
 
-          {updateInfo && !updateInfo.available && (
-            <p style={{ color: 'var(--success)', marginBottom: '16px', fontSize: '13px' }}>
-              You're running the latest version.
-            </p>
-          )}
+            <div class="divider" />
 
-          <div style={{ marginBottom: '16px' }}>
-            <button
-              class="btn btn-secondary btn-sm"
-              onClick={onCheckUpdate}
-              disabled={checkingUpdate}
-            >
-              {checkingUpdate ? <><span class="spinner"></span> Checking...</> : 'Check for Updates'}
+            <h4 class="sub-h">{t('sys.manual')}</h4>
+            <div class="form-group">
+              <label for="fw-file">{t('sys.file')}</label>
+              <input id="fw-file" type="file" accept=".bin" onChange={handleFileSelect} disabled={uploading} />
+            </div>
+            {uploading && (
+              <div class="form-group">
+                <div class="meter"><i style={{ width: `${uploadProgress}%` }} /></div>
+                <p class="hint num">{uploadStatus}</p>
+              </div>
+            )}
+            <button type="button" class="btn" onClick={handleUpload} disabled={uploading || !selectedFile}>
+              {t('sys.upload')}
             </button>
           </div>
+        </div>
 
-          <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)', margin: '20px 0' }} />
-
-          <h3 style={{ marginBottom: '12px', fontSize: '14px' }}>Manual Upload</h3>
-          <div class="form-group">
-            <label>Select firmware file (.bin)</label>
-            <input
-              type="file"
-              accept=".bin"
-              onChange={handleFileSelect}
-              disabled={uploading}
-            />
-          </div>
-          {uploading && (
-            <div style={{ marginBottom: '16px' }}>
-              <div class="progress-bar">
-                <div class="progress-fill" style={{ width: `${uploadProgress}%` }}></div>
-              </div>
-              <p class="form-hint" style={{ marginTop: '8px' }}>{uploadStatus}</p>
+        <div class="card">
+          <div class="card-h"><h3>{t('sys.actions')}</h3></div>
+          <div class="card-b">
+            <div class="btn-group">
+              <button type="button" class="btn" onClick={handleReboot}>{t('sys.reboot')}</button>
+              <button type="button" class="btn danger" onClick={handleReset}>{t('sys.reset')}</button>
             </div>
-          )}
-          <button class="btn btn-primary" onClick={handleUpload} disabled={uploading || !selectedFile}>
-            Upload Firmware
-          </button>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2>System Actions</h2>
-        </div>
-        <div class="card-body">
-          <div class="btn-group">
-            <button class="btn btn-secondary" onClick={handleReboot}>Reboot Device</button>
-            <button class="btn btn-danger" onClick={handleReset}>Factory Reset</button>
           </div>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-header">
-          <h2>System Log</h2>
+        <div class="card-h">
+          <h3>{t('sys.log')}</h3>
+          <label class="check meta">
+            <input
+              type="checkbox"
+              checked={autoScroll}
+              onChange={(e) => setAutoScroll((e.target as HTMLInputElement).checked)}
+            />
+            {t('sys.autoscroll')}
+          </label>
+          <button type="button" class="btn sm" onClick={onClearLogs}>{t('sys.clear')}</button>
         </div>
-        <div class="card-body">
-          <div
-            ref={logContainerRef}
-            class="log-container"
-          >
+        <div class="card-b">
+          <div ref={logContainerRef} class="log-container">
+            {logs.length === 0 && <div class="log-empty">{t('sys.logEmpty')}</div>}
             {logs.map((log, i) => (
               <div key={i}>
-                <span style={{ color: 'var(--text-muted)' }}>{log.timestamp}</span>{' '}
-                <span dangerouslySetInnerHTML={{ __html: escapeHtml(log.message) }} />
+                <span class="log-ts">{log.timestamp}</span> {log.message}
               </div>
             ))}
-          </div>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '12px' }}>
-            <button class="btn btn-secondary" onClick={onClearLogs}>Clear</button>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={autoScroll}
-                onChange={(e) => setAutoScroll((e.target as HTMLInputElement).checked)}
-                style={{ width: '16px', height: '16px', accentColor: 'var(--accent-blue)' }}
-              />
-              Auto-scroll
-            </label>
           </div>
         </div>
       </div>

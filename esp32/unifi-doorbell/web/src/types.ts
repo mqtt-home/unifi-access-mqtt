@@ -71,6 +71,7 @@ export interface Status {
     configured?: boolean            // legacy creds present
     apiTokenSet?: boolean           // API token present
     setupIncomplete?: boolean       // legacy creds present, token missing
+    wsReconnects?: number
     error?: string
   }
   mqtt?: {
@@ -78,8 +79,19 @@ export interface Status {
   }
   system?: {
     heap?: number
+    heapMin?: number
+    heapTotal?: number
     uptime?: number
+    cpuMhz?: number
   }
+  gpios?: GpioStatus[]
+}
+
+export interface GpioStatus {
+  pin: number
+  label: string
+  state: 'active' | 'idle' | string
+  action: GpioConfig['action']
 }
 
 export interface TopologyDevice {

@@ -8,7 +8,6 @@ import api from './api/api'
 import { Login } from './components/Login'
 import { ApSetup } from './components/ApSetup'
 import { Header } from './components/Header'
-import { Navigation } from './components/Navigation'
 import { RingAlert } from './components/RingAlert'
 import { StatusTab } from './components/StatusTab'
 import { SetupWizard } from './components/SetupWizard'
@@ -86,7 +85,7 @@ export function App() {
   if (appState === 'loading') {
     return (
       <div class="login-container">
-        <div class="spinner" style={{ width: '40px', height: '40px' }}></div>
+        <div class="spinner lg"></div>
       </div>
     )
   }
@@ -101,11 +100,17 @@ export function App() {
 
   return (
     <div class="app-container">
-      <Header connected={connected} onLogout={handleLogout} />
-      <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
-      <RingAlert active={ringing} />
+      <Header
+        connected={connected}
+        version={versionInfo?.version}
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        onLogout={handleLogout}
+      />
 
       <main class="app-content">
+        <RingAlert active={ringing} />
+
         {activeTab === 'status' && (
           <StatusTab status={status} ringing={ringing} />
         )}

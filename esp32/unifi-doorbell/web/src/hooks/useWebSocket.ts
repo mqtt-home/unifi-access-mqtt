@@ -13,7 +13,7 @@ export function useWebSocket() {
   const [ringing, setRinging] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimerRef = useRef<number>()
+  const reconnectTimerRef = useRef<number | undefined>(undefined)
   const initialFetchDone = useRef(false)
 
   const fetchInitialStatus = useCallback(async () => {
