@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mqtt-home/ui": "github:mqtt-home/home-ui#v0.1.0",
     "preact": "^11.0.1"
   },
   "devDependencies": {

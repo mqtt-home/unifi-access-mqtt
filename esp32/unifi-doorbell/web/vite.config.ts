@@ -1,8 +1,10 @@
 import { defineConfig } from 'vite'
 import preact from '@preact/preset-vite'
+import { homeUi } from '@mqtt-home/ui/vite'
 
 export default defineConfig({
-  plugins: [preact()],
+  // homeUi(): the prepaint script (dark mode, Wall Display detection) first in <head>
+  plugins: [preact(), homeUi()],
   build: {
     // Output to data folder for ESP32
     outDir: '../data',
