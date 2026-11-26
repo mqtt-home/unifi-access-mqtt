@@ -296,6 +296,7 @@ This requires extracting client certificates from the Cloud Gateway via `scripts
 | `wakeOnMotion[].value` | Trigger value (boolean, string, number). |
 | `wakeOnMotion[].viewers` | Optional list of viewer device IDs to wake. Defaults to **all known viewers** discovered at bootstrap. |
 | `wakeOnMotion[].sourceReader` | Optional source reader for the camera feed shown on the viewer. Defaults to `doorbell.sourceReader` if set. |
+| `wakeOnMotion[].from`, `wakeOnMotion[].until` | Optional daily window in local time (`"06:00"`, `"19:00"`, until is exclusive) in which the binding wakes the viewers; outside it the trigger is ignored. An `until` before `from` runs over midnight. Without both the binding is always active. |
 
 ### MQTT Topics
 

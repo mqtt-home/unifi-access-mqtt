@@ -1,6 +1,8 @@
 package main
 
 import (
+	_ "time/tzdata" // the pod sets TZ; do not depend on zoneinfo in the image
+
 	"os"
 	"os/signal"
 	"syscall"

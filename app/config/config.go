@@ -61,6 +61,8 @@ type MotionBinding struct {
 	Value        any      `json:"value"`                  // Trigger value, e.g. true
 	Viewers      []string `json:"viewers,omitempty"`      // Viewer device IDs to wake; empty = all known viewers
 	SourceReader string   `json:"sourceReader,omitempty"` // Optional source reader device ID for the remote_view (defaults to doorbell.sourceReader)
+	From         string   `json:"from,omitempty"`         // Optional start of the daily window in which this binding wakes, local time "HH:MM"
+	Until        string   `json:"until,omitempty"`        // Optional end of that window (exclusive); earlier than From = over midnight
 }
 
 func (u *UniFiConfig) GetVerifySSL() bool {

@@ -1,6 +1,8 @@
 package mqtt
 
 import (
+	"time"
+
 	"github.com/mqtt-home/unifi-access-mqtt/config"
 	"github.com/mqtt-home/unifi-access-mqtt/unifi"
 	"github.com/philipparndt/go-logger"
@@ -35,12 +37,50 @@ func (l *MotionListener) Start() {
 			continue
 		}
 
+		if _, ok := minuteOfDay(binding.From, 0); !ok {
+			logger.Warn("wake-on-motion: invalid from, the binding is always active", "topic", binding.Topic, "from", binding.From)
+		}
+		if _, ok := minuteOfDay(binding.Until, 0); !ok {
+			logger.Warn("wake-on-motion: invalid until, the binding is always active", "topic", binding.Topic, "until", binding.Until)
+		}
+
 		mqtt.Subscribe(binding.Topic, func(_ string, payload []byte) {
 			l.handle(binding, payload)
 		})
 		logger.Info("wake-on-motion: subscribed",
-			"topic", binding.Topic, "field", binding.Field)
+			"topic", binding.Topic, "field", binding.Field, "from", binding.From, "until", binding.Until)
 	}
+}
+
+// activeAt reports whether the binding may wake viewers at the given time:
+// always without From/Until, otherwise from From up to (not including) Until
+// in the time's own zone. A window with Until before From runs over midnight.
+func activeAt(b config.MotionBinding, now time.Time) bool {
+	if b.From == "" && b.Until == "" {
+		return true
+	}
+	from, okFrom := minuteOfDay(b.From, 0)
+	until, okUntil := minuteOfDay(b.Until, 24*60)
+	if !okFrom || !okUntil || from == until {
+		return true
+	}
+	minute := now.Hour()*60 + now.Minute()
+	if from < until {
+		return minute >= from && minute < until
+	}
+	return minute >= from || minute < until
+}
+
+// minuteOfDay parses "HH:MM"; an empty value yields the fallback.
+func minuteOfDay(value string, fallback int) (int, bool) {
+	if value == "" {
+		return fallback, true
+	}
+	t, err := time.Parse("15:04", value)
+	if err != nil {
+		return 0, false
+	}
+	return t.Hour()*60 + t.Minute(), true
 }
 
 func (l *MotionListener) handle(b config.MotionBinding, payload []byte) {
@@ -53,6 +93,12 @@ func (l *MotionListener) handle(b config.MotionBinding, payload []byte) {
 	if !matched {
 		logger.Trace("wake-on-motion: value does not match",
 			"topic", b.Topic, "field", b.Field, "value", value)
+		return
+	}
+
+	if !activeAt(b, time.Now()) {
+		logger.Debug("wake-on-motion: outside the binding's hours, not waking",
+			"topic", b.Topic, "from", b.From, "until", b.Until)
 		return
 	}
 
